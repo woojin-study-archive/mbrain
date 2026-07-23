@@ -9,18 +9,18 @@ export async function generateMetadata(): Promise<Metadata> {
   const imageUrl = `${protocol}://${host}/og.png`;
 
   return {
-    title: "재고 전략 관제실 | H·GROUP AI Inventory",
-    description: "계열사 통합 AI 재고 소진 의사결정 플랫폼 PoC",
+    title: "악성재고 예방 관제실 | 현대백화점",
+    description: "현대백화점 AI 악성재고 사전예측 및 실질 마진 최적화 PoC",
     openGraph: {
-      title: "재고 전략 관제실",
-      description: "계열사 통합 AI 재고 소진 의사결정 플랫폼",
+      title: "악성재고 예방 관제실",
+      description: "지점 이동·노출·할인·반품 전략의 실질 마진을 비교하는 현대백화점 재고 의사결정 PoC",
       type: "website",
-      images: [{ url: imageUrl, width: 1200, height: 630, alt: "재고 전략 관제실" }],
+      images: [{ url: imageUrl, width: 1200, height: 630, alt: "악성재고 예방 관제실" }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "재고 전략 관제실",
-      description: "계열사 통합 AI 재고 소진 의사결정 플랫폼",
+      title: "악성재고 예방 관제실",
+      description: "현대백화점 AI 악성재고 사전예측 및 실질 마진 최적화 PoC",
       images: [imageUrl],
     },
   };
