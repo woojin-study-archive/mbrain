@@ -1,6 +1,5 @@
-"use client";
-
 import { useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 type TabName = "운영 요약" | "위험 예측" | "지점 재고" | "AI 전략" | "승인 관리" | "MCP 로그";
 type Strategy = "transfer" | "exposure" | "discount" | "return";
@@ -61,6 +60,19 @@ const navItems: [string, TabName][] = [
   ["↗", "MCP 로그"],
 ];
 
+const tabRoutes: Record<TabName, string> = {
+  "운영 요약": "/",
+  "위험 예측": "/risk",
+  "지점 재고": "/inventory",
+  "AI 전략": "/strategy",
+  "승인 관리": "/approvals",
+  "MCP 로그": "/logs",
+};
+
+const routeTabs = Object.fromEntries(
+  Object.entries(tabRoutes).map(([tab, route]) => [route, tab]),
+) as Record<string, TabName>;
+
 const branches = ["전체 지점", "본점", "더현대 서울", "무역센터점", "판교점", "부산점", "울산점"];
 
 const pageMeta: Record<TabName, { eyebrow: string; title: string; subtitle: string }> = {
@@ -88,7 +100,9 @@ const mcpLogs: McpLog[] = [
 ];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<TabName>("운영 요약");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = routeTabs[location.pathname] ?? "운영 요약";
   const [selectedSku, setSelectedSku] = useState(products[0].sku);
   const [branch, setBranch] = useState("전체 지점");
   const [category, setCategory] = useState("전체 카테고리");
@@ -148,7 +162,11 @@ export default function Home() {
     setSelectedSku(sku);
     setStrategy("transfer");
     setApproved(false);
-    if (goTo) setActiveTab(goTo);
+    if (goTo) navigate(tabRoutes[goTo]);
+  }
+
+  function openTab(tab: TabName) {
+    navigate(tabRoutes[tab]);
   }
 
   function updateApproval(id: string, status: ApprovalStatus) {
@@ -212,7 +230,7 @@ export default function Home() {
         <p className="nav-label">DECISION CENTER</p>
         <nav aria-label="주요 메뉴">
           {navItems.map(([icon, label]) => (
-            <button className={`nav-item ${activeTab === label ? "active" : ""}`} key={label} onClick={() => setActiveTab(label)}>
+            <button className={`nav-item ${activeTab === label ? "active" : ""}`} key={label} onClick={() => openTab(label)}>
               <span>{icon}</span>{label}{label === "승인 관리" && <em>{approvals.filter((item) => item.status === "대기").length}</em>}
             </button>
           ))}
@@ -256,7 +274,7 @@ export default function Home() {
             </section>
             <section className="new-dashboard-grid">
               <article className="panel watch-panel">
-                <div className="panel-head"><div><p className="eyebrow">EARLY WARNING · RISK TRANSITION</p><h2>악성재고 전환 예측</h2></div><button onClick={() => setActiveTab("위험 예측")}>상세 예측 <span>→</span></button></div>
+                <div className="panel-head"><div><p className="eyebrow">EARLY WARNING · RISK TRANSITION</p><h2>악성재고 전환 예측</h2></div><button onClick={() => openTab("위험 예측")}>상세 예측 <span>→</span></button></div>
                 <ProductTable items={filtered} selectedSku={selectedSku} onSelect={(sku) => selectProduct(sku)} />
               </article>
               <article className="panel signal-panel">
@@ -264,13 +282,13 @@ export default function Home() {
                 <RiskSignals product={selected} />
               </article>
               <article className="panel branch-panel">
-                <div className="panel-head"><div><p className="eyebrow">STORE DEMAND MAP</p><h2>지점별 이동 타당성</h2></div><button onClick={() => setActiveTab("지점 재고")}>재배치 설계 <span>→</span></button></div>
+                <div className="panel-head"><div><p className="eyebrow">STORE DEMAND MAP</p><h2>지점별 이동 타당성</h2></div><button onClick={() => openTab("지점 재고")}>재배치 설계 <span>→</span></button></div>
                 <BranchList />
               </article>
               <article className="panel log-panel">
                 <div className="panel-head"><div><p className="eyebrow">AI TRACEABILITY</p><h2>최근 MCP 실행</h2></div><span className="live-badge"><i /> LIVE</span></div>
                 <CompactLogs logs={mcpLogs.slice(0, 4)} />
-                <button className="log-button" onClick={() => setActiveTab("MCP 로그")}>전체 판단 근거 보기 <span>↗</span></button>
+                <button className="log-button" onClick={() => openTab("MCP 로그")}>전체 판단 근거 보기 <span>↗</span></button>
               </article>
             </section>
           </>
@@ -287,7 +305,7 @@ export default function Home() {
               <article className="panel prediction-timeline">
                 <div className="panel-head"><div><p className="eyebrow">TRANSITION TIMELINE</p><h2>위험 전환 예상</h2></div></div>
                 <div className="timeline-chart"><div><span>오늘</span><i className="safe" /><b>관찰</b></div><div><span>D+7</span><i className="warn" /><b>주의 61%</b></div><div><span>D+18</span><i className="danger" /><b>위험 78%</b></div><div><span>D+30</span><i className="dead" /><b>악성 전환</b></div></div>
-                <button className="full-action" onClick={() => { setActiveTab("AI 전략"); notify(`${selected.name} 전략 분석을 시작했습니다.`); }}>이 상품의 예방 전략 설계 →</button>
+                <button className="full-action" onClick={() => { openTab("AI 전략"); notify(`${selected.name} 전략 분석을 시작했습니다.`); }}>이 상품의 예방 전략 설계 →</button>
               </article>
             </aside>
           </section>
