@@ -1,9 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 type TabName = "운영 요약" | "위험 예측" | "지점 재고" | "AI 전략" | "승인 관리" | "MCP 로그";
 type Strategy = "transfer" | "exposure" | "discount" | "return";
 type ApprovalStatus = "대기" | "승인" | "반려";
+
+type TourStep = {
+  target: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+};
 
 type Product = {
   sku: string;
@@ -75,6 +82,39 @@ const routeTabs = Object.fromEntries(
 
 const branches = ["전체 지점", "본점", "더현대 서울", "무역센터점", "판교점", "부산점", "울산점"];
 
+const tourSteps: TourStep[] = [
+  {
+    target: "[data-tour='navigation']",
+    eyebrow: "01 · CONTROL MAP",
+    title: "의사결정 흐름을 한눈에",
+    description: "예측부터 재고 이동, 전략 승인, 실행 로그까지 모든 업무가 이 메뉴 안에서 연결됩니다.",
+  },
+  {
+    target: "[data-tour='kpis']",
+    eyebrow: "02 · MORNING BRIEF",
+    title: "오늘의 위험부터 확인하세요",
+    description: "전환 예상액과 경보 SKU, 예방 가능 손실을 요약해 우선 대응할 규모를 바로 보여줍니다.",
+  },
+  {
+    target: "[data-tour='risk-table']",
+    eyebrow: "03 · EARLY WARNING",
+    title: "악성재고가 되기 전에 감지",
+    description: "상품을 선택하면 판매 둔화, 계절성, 재고 과잉을 결합한 전환 확률과 근거가 함께 갱신됩니다.",
+  },
+  {
+    target: "[data-tour='store-map']",
+    eyebrow: "04 · STORE NETWORK",
+    title: "지점 간 수요 차이를 기회로",
+    description: "과잉 재고를 수요가 남은 지점과 연결해 할인보다 마진이 높은 이동안을 찾습니다.",
+  },
+  {
+    target: "[data-tour='analyze']",
+    eyebrow: "05 · AI ACTION",
+    title: "최적 전략을 실행해보세요",
+    description: "AI가 이동·노출·할인·반품안을 같은 비용 기준으로 비교합니다. 언제든 ‘가이드’로 다시 볼 수 있어요.",
+  },
+];
+
 const pageMeta: Record<TabName, { eyebrow: string; title: string; subtitle: string }> = {
   "운영 요약": { eyebrow: "HYUNDAI DEPARTMENT STORE · INVENTORY CONTROL", title: "악성재고 예방 관제실", subtitle: "악성재고가 되기 전에 감지하고, 실질 마진이 가장 높은 대응을 찾습니다." },
   "위험 예측": { eyebrow: "EARLY WARNING · PREDICTIVE RISK", title: "악성재고 전환 예측", subtitle: "판매·재고·시즌·외부 신호를 결합해 위험 전환 시점과 원인을 확인합니다." },
@@ -121,6 +161,7 @@ export default function Home() {
   const [approved, setApproved] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState("");
+  const [tourStep, setTourStep] = useState<number | null>(location.pathname === "/" ? 0 : null);
 
   const selected = products.find((product) => product.sku === selectedSku) ?? products[0];
   const filtered = products.filter((product) =>
@@ -167,6 +208,11 @@ export default function Home() {
 
   function openTab(tab: TabName) {
     navigate(tabRoutes[tab]);
+  }
+
+  function startTour() {
+    navigate("/");
+    setTourStep(0);
   }
 
   function updateApproval(id: string, status: ApprovalStatus) {
@@ -228,7 +274,7 @@ export default function Home() {
       <aside className="sidebar">
         <div className="brand"><div className="brand-mark">H</div><div><strong>THE HYUNDAI</strong><span>INVENTORY INTELLIGENCE</span></div></div>
         <p className="nav-label">DECISION CENTER</p>
-        <nav aria-label="주요 메뉴">
+        <nav aria-label="주요 메뉴" data-tour="navigation">
           {navItems.map(([icon, label]) => (
             <button className={`nav-item ${activeTab === label ? "active" : ""}`} key={label} onClick={() => openTab(label)}>
               <span>{icon}</span>{label}{label === "승인 관리" && <em>{approvals.filter((item) => item.status === "대기").length}</em>}
@@ -246,9 +292,10 @@ export default function Home() {
         <header className="topbar">
           <div><p className="eyebrow">{pageMeta[activeTab].eyebrow}</p><h1>{pageMeta[activeTab].title}</h1><p className="subtitle">{pageMeta[activeTab].subtitle}</p></div>
           <div className="header-actions">
+            <button className="tour-trigger" onClick={startTour}><span>?</span> 가이드</button>
             <button className="icon-button" aria-label="알림" onClick={() => notify("새 위험 전환 알림 6건을 확인했습니다.")}>♢<span>6</span></button>
             <div className="updated"><span>마지막 데이터 동기화</span><b>오늘 10:24</b></div>
-            {(activeTab === "운영 요약" || activeTab === "위험 예측" || activeTab === "AI 전략") && <button className="primary-button" onClick={runAnalysis} disabled={analyzing}><span>✦</span>{analyzing ? "분석 중…" : activeTab === "위험 예측" ? "예측 다시 실행" : "최적 전략 분석"}</button>}
+            {(activeTab === "운영 요약" || activeTab === "위험 예측" || activeTab === "AI 전략") && <button className="primary-button" data-tour={activeTab === "운영 요약" ? "analyze" : undefined} onClick={runAnalysis} disabled={analyzing}><span>✦</span>{analyzing ? "분석 중…" : activeTab === "위험 예측" ? "예측 다시 실행" : "최적 전략 분석"}</button>}
           </div>
         </header>
 
@@ -266,14 +313,14 @@ export default function Home() {
 
         {activeTab === "운영 요약" && (
           <>
-            <section className="kpi-grid" aria-label="핵심 운영 지표">
+            <section className="kpi-grid" aria-label="핵심 운영 지표" data-tour="kpis">
               <article className="kpi-card critical"><div className="kpi-head"><span>악성재고 전환 예상액</span><i>향후 30일</i></div><div className="kpi-value"><b>₩3.12</b><em>억원</em></div><div className="kpi-foot"><strong>▲ 8.6%</strong><span>조기 대응이 필요한 증가세</span></div><div className="mini-bars">{[38,42,49,44,61,57,74,68,82,93].map((height,index)=><i key={index} style={{height:`${height}%`}} />)}</div></article>
               <article className="kpi-card"><div className="kpi-head"><span>사전 경보 SKU</span><i>전환확률 ≥ 50%</i></div><div className="kpi-value"><b>34</b><em>개</em></div><div className="kpi-foot"><strong className="down">12개 선제 대응</strong><span>오늘 신규 6개</span></div><div className="ring"><span>71<small>%</small></span></div></article>
               <article className="kpi-card"><div className="kpi-head"><span>지점 이동 후보</span><i>마진 개선 가능</i></div><div className="kpi-value"><b>18</b><em>건</em></div><div className="kpi-foot"><strong className="neutral">부산점 7건</strong><span>수요 초과 지점</span></div><div className="days-track"><i style={{width:"72%"}} /><b>72</b><span>100%</span></div></article>
               <article className="kpi-card savings"><div className="kpi-head"><span>예방 가능 손실</span><i>AI 추정</i></div><div className="kpi-value"><b>₩1.46</b><em>억원</em></div><div className="kpi-foot"><strong className="down">+ 21.8%</strong><span>이번 달 누적 효과</span></div><div className="sparkline"><i /><i /><i /><i /><i /><i /><i /></div></article>
             </section>
             <section className="new-dashboard-grid">
-              <article className="panel watch-panel">
+              <article className="panel watch-panel" data-tour="risk-table">
                 <div className="panel-head"><div><p className="eyebrow">EARLY WARNING · RISK TRANSITION</p><h2>악성재고 전환 예측</h2></div><button onClick={() => openTab("위험 예측")}>상세 예측 <span>→</span></button></div>
                 <ProductTable items={filtered} selectedSku={selectedSku} onSelect={(sku) => selectProduct(sku)} />
               </article>
@@ -281,7 +328,7 @@ export default function Home() {
                 <div className="panel-head"><div><p className="eyebrow">WHY NOW?</p><h2>위험 전환 근거</h2></div><span className="confidence">예측 신뢰도 <b>89%</b></span></div>
                 <RiskSignals product={selected} />
               </article>
-              <article className="panel branch-panel">
+              <article className="panel branch-panel" data-tour="store-map">
                 <div className="panel-head"><div><p className="eyebrow">STORE DEMAND MAP</p><h2>지점별 이동 타당성</h2></div><button onClick={() => openTab("지점 재고")}>재배치 설계 <span>→</span></button></div>
                 <BranchList />
               </article>
@@ -396,7 +443,155 @@ export default function Home() {
         <footer><span>특약매입 상품은 입점업체 협의가 필요하며, 모든 AI 전략은 계약·가격 정책 검증 후 실행됩니다.</span><b>HYUNDAI DEPARTMENT STORE · INVENTORY POC 2026</b></footer>
       </section>
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+      {tourStep !== null && (
+        <ProductTour
+          step={tourStep}
+          steps={tourSteps}
+          onStepChange={setTourStep}
+          onClose={() => setTourStep(null)}
+        />
+      )}
     </main>
+  );
+}
+
+function ProductTour({
+  step,
+  steps,
+  onStepChange,
+  onClose,
+}: {
+  step: number;
+  steps: TourStep[];
+  onStepChange: (step: number) => void;
+  onClose: () => void;
+}) {
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  const current = steps[step];
+
+  useEffect(() => {
+    let retryTimer = 0;
+    let settleTimer = 0;
+
+    const updateTarget = () => {
+      const target = document.querySelector(current.target);
+      if (!target) {
+        retryTimer = window.setTimeout(updateTarget, 80);
+        return;
+      }
+      setTargetRect(target.getBoundingClientRect());
+    };
+
+    const target = document.querySelector(current.target);
+    target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    updateTarget();
+    settleTimer = window.setTimeout(updateTarget, 380);
+    window.addEventListener("resize", updateTarget);
+    window.addEventListener("scroll", updateTarget, true);
+
+    return () => {
+      window.clearTimeout(retryTimer);
+      window.clearTimeout(settleTimer);
+      window.removeEventListener("resize", updateTarget);
+      window.removeEventListener("scroll", updateTarget, true);
+    };
+  }, [current.target]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowRight") onStepChange(Math.min(steps.length - 1, step + 1));
+      if (event.key === "ArrowLeft") onStepChange(Math.max(0, step - 1));
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose, onStepChange, step, steps.length]);
+
+  if (!targetRect) return null;
+
+  const padding = 8;
+  const spotlight = {
+    top: Math.max(6, targetRect.top - padding),
+    left: Math.max(6, targetRect.left - padding),
+    width: Math.min(window.innerWidth - 12, targetRect.width + padding * 2),
+    height: Math.min(window.innerHeight - 12, targetRect.height + padding * 2),
+  };
+  const tooltipWidth = Math.min(360, window.innerWidth - 24);
+  const tooltipHeight = 280;
+  const gap = 18;
+  const roomRight = window.innerWidth - (spotlight.left + spotlight.width);
+  const roomLeft = spotlight.left;
+  let tooltipLeft = spotlight.left;
+  let tooltipTop = spotlight.top + spotlight.height + gap;
+  let side: "left" | "right" | "bottom" | "top" = "bottom";
+
+  if (roomRight >= tooltipWidth + gap) {
+    tooltipLeft = spotlight.left + spotlight.width + gap;
+    tooltipTop = spotlight.top + Math.max(0, (spotlight.height - tooltipHeight) / 2);
+    side = "right";
+  } else if (roomLeft >= tooltipWidth + gap) {
+    tooltipLeft = spotlight.left - tooltipWidth - gap;
+    tooltipTop = spotlight.top + Math.max(0, (spotlight.height - tooltipHeight) / 2);
+    side = "left";
+  } else if (tooltipTop + tooltipHeight > window.innerHeight - 12) {
+    tooltipTop = spotlight.top - tooltipHeight - gap;
+    side = "top";
+  }
+
+  tooltipLeft = Math.max(12, Math.min(tooltipLeft, window.innerWidth - tooltipWidth - 12));
+  tooltipTop = Math.max(12, Math.min(tooltipTop, window.innerHeight - tooltipHeight - 12));
+
+  return (
+    <div className="product-tour" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+      <div className="tour-scrim tour-scrim-top" style={{ height: spotlight.top }} />
+      <div
+        className="tour-scrim tour-scrim-left"
+        style={{ top: spotlight.top, width: spotlight.left, height: spotlight.height }}
+      />
+      <div
+        className="tour-scrim tour-scrim-right"
+        style={{
+          top: spotlight.top,
+          left: spotlight.left + spotlight.width,
+          height: spotlight.height,
+        }}
+      />
+      <div
+        className="tour-scrim tour-scrim-bottom"
+        style={{ top: spotlight.top + spotlight.height }}
+      />
+      <div className="tour-spotlight" style={spotlight} />
+      <section className={`tour-card tour-card-${side}`} style={{ left: tooltipLeft, top: tooltipTop, width: tooltipWidth }}>
+        <header>
+          <div className="tour-step-label"><span>{current.eyebrow}</span><b>{step + 1} / {steps.length}</b></div>
+          <button onClick={onClose} aria-label="제품 둘러보기 닫기">×</button>
+        </header>
+        <div className="tour-card-body">
+          <div className="tour-icon">{step === steps.length - 1 ? "✦" : String(step + 1).padStart(2, "0")}</div>
+          <h2 id="tour-title">{current.title}</h2>
+          <p>{current.description}</p>
+        </div>
+        <div className="tour-progress" aria-label={`총 ${steps.length}단계 중 ${step + 1}단계`}>
+          {steps.map((item, index) => (
+            <button
+              key={item.title}
+              className={index === step ? "active" : index < step ? "done" : ""}
+              onClick={() => onStepChange(index)}
+              aria-label={`${index + 1}단계로 이동`}
+            />
+          ))}
+        </div>
+        <footer>
+          <button className="tour-skip" onClick={onClose}>건너뛰기</button>
+          <div>
+            {step > 0 && <button className="tour-back" onClick={() => onStepChange(step - 1)}>이전</button>}
+            <button className="tour-next" autoFocus onClick={() => step === steps.length - 1 ? onClose() : onStepChange(step + 1)}>
+              {step === steps.length - 1 ? "둘러보기 완료" : "다음"} <span>{step === steps.length - 1 ? "✓" : "→"}</span>
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
   );
 }
 
