@@ -84,6 +84,13 @@ const routeTabs = Object.fromEntries(
 
 const branches = ["전체 지점", "본점", "더현대 서울", "무역센터점", "판교점", "부산점", "울산점"];
 const riskStatusOptions: RiskStatus[] = ["위험", "주의", "관찰"];
+const inventoryCategories = [
+  { name: "패션", code: "FS", skuCount: "7,842", stock: "18.4만", risk: 12, balance: 68, description: "의류 · 잡화 · 시즌 상품" },
+  { name: "식품", code: "FD", skuCount: "4,126", stock: "7.2만", risk: 8, balance: 81, description: "신선 · 가공 · 선물세트" },
+  { name: "가전", code: "EL", skuCount: "3,918", stock: "5.4만", risk: 5, balance: 76, description: "생활 · 계절 · 디지털" },
+  { name: "가구", code: "LV", skuCount: "2,746", stock: "3.1만", risk: 4, balance: 73, description: "리빙 · 가구 · 홈데코" },
+  { name: "뷰티", code: "BT", skuCount: "6,050", stock: "9.6만", risk: 5, balance: 88, description: "화장품 · 향수 · 케어" },
+];
 const strategyMeta: Record<Strategy, { name: string; summary: string }> = {
   transfer: { name: "부산점 재고 이동", summary: "수요가 유지되는 부산점으로 재고를 이동해 정상가 판매 기회를 확보합니다." },
   exposure: { name: "메인 노출 강화", summary: "정상가를 유지하면서 시즌존 노출을 확대해 브랜드와 마진을 함께 보호합니다." },
@@ -170,6 +177,7 @@ export default function Home() {
   const [riskStatuses, setRiskStatuses] = useState<RiskStatus[]>(riskStatusOptions);
   const [destination, setDestination] = useState("부산점");
   const [transferQty, setTransferQty] = useState(180);
+  const [inventoryCategory, setInventoryCategory] = useState<string | null>(null);
   const [approvalFilter, setApprovalFilter] = useState<"전체" | ApprovalStatus>("전체");
   const [approvals, setApprovals] = useState(initialApprovals);
   const [selectedApproval, setSelectedApproval] = useState(initialApprovals[0].id);
@@ -229,7 +237,14 @@ export default function Home() {
   }
 
   function openTab(tab: TabName) {
+    if (tab === "지점 재고") setInventoryCategory(null);
     navigate(tabRoutes[tab]);
+  }
+
+  function openInventoryCategory(categoryName: string) {
+    const firstProduct = products.find((product) => product.category === categoryName);
+    if (firstProduct) selectProduct(firstProduct.sku);
+    setInventoryCategory(categoryName);
   }
 
   function startTour() {
@@ -515,10 +530,37 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
           </section>
         )}
 
-        {activeTab === "지점 재고" && (
+        {activeTab === "지점 재고" && inventoryCategory === null && (
+          <section className="inventory-category-page">
+            <div className="inventory-overview-head">
+              <div><p className="eyebrow">CATEGORY INVENTORY · NETWORK OVERVIEW</p><h2>카테고리별 통합 재고</h2><span>카테고리를 선택하면 16개 지점의 수급 현황과 AI 추천 이동안을 확인할 수 있습니다.</span></div>
+              <div className="inventory-overview-summary"><span>전체 SKU <b>24,682</b></span><span>위험 카테고리 <b>5</b></span><span>연결 지점 <b>16</b></span></div>
+            </div>
+            <div className="inventory-category-grid">
+              {inventoryCategories.map((item, index) => (
+                <button className={`inventory-category-card category-${index + 1}`} key={item.name} onClick={() => openInventoryCategory(item.name)}>
+                  <span className="category-card-top"><i>{item.code}</i><span><b>{item.name}</b><small>{item.description}</small></span><em>{item.risk}개 위험</em></span>
+                  <span className="category-card-metrics"><span><small>운영 SKU</small><b>{item.skuCount}</b></span><span><small>통합 재고</small><b>{item.stock}<em>개</em></b></span></span>
+                  <span className="category-balance"><span><small>지점 재고 균형도</small><b>{item.balance}%</b></span><i><em style={{ width: `${item.balance}%` }} /></i></span>
+                  <strong>지점별 수급 현황 보기 <span>→</span></strong>
+                </button>
+              ))}
+            </div>
+            <aside className="inventory-guide">
+              <span>HOW TO READ</span>
+              <p><b>01</b> 카테고리 선택</p><i>→</i><p><b>02</b> 상품별 지점 수급 확인</p><i>→</i><p><b>03</b> AI 추천 이동안 검증</p>
+            </aside>
+          </section>
+        )}
+
+        {activeTab === "지점 재고" && inventoryCategory !== null && (
+          <>
+            <div className="inventory-breadcrumb">
+              <button onClick={() => setInventoryCategory(null)}>전체 카테고리</button><span>›</span><b>{inventoryCategory}</b><em>16개 지점 통합 수급 현황</em>
+            </div>
           <section className="tab-layout inventory-tab">
             <article className="panel tab-main">
-              <div className="panel-head"><div><p className="eyebrow">STORE INVENTORY MATRIX</p><h2>{selected.name} 지점별 수급 현황</h2></div><select className="product-select" value={selectedSku} onChange={(event) => selectProduct(event.target.value)}>{products.map((product) => <option value={product.sku} key={product.sku}>{product.name}</option>)}</select></div>
+              <div className="panel-head"><div><p className="eyebrow">STORE INVENTORY MATRIX · {inventoryCategory.toUpperCase()}</p><h2>{selected.name} 지점별 수급 현황</h2></div><select className="product-select" value={selectedSku} onChange={(event) => selectProduct(event.target.value)}>{products.filter((product) => product.category === inventoryCategory).map((product) => <option value={product.sku} key={product.sku}>{product.name}</option>)}</select></div>
               <div className="store-cards">
                 <StoreCard code="MC" name="무역센터점" stock={428} velocity={21} weeks={20.4} state="과잉" />
                 <StoreCard code="BS" name="부산점" stock={38} velocity={56} weeks={0.7} state="부족" />
@@ -541,6 +583,7 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
               <article className="panel"><div className="panel-head"><div><p className="eyebrow">RECOMMENDED ROUTES</p><h2>AI 추천 이동안</h2></div></div><BranchList /></article>
             </aside>
           </section>
+          </>
         )}
 
         {activeTab === "AI 전략" && (
