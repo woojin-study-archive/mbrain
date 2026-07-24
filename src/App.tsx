@@ -4,6 +4,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 type TabName = "운영 요약" | "위험 예측" | "지점 재고" | "AI 전략" | "승인 관리" | "MCP 로그";
 type Strategy = "transfer" | "exposure" | "discount" | "return";
 type ApprovalStatus = "대기" | "승인" | "반려";
+type CollaborationTool = "slack" | "teams";
+type RiskStatus = "위험" | "주의" | "관찰";
 
 type TourStep = {
   target: string;
@@ -23,7 +25,7 @@ type Product = {
   salesDelta: number;
   risk: number;
   transition: number;
-  status: "위험" | "주의" | "관찰";
+  status: RiskStatus;
   event: string;
 };
 
@@ -81,6 +83,7 @@ const routeTabs = Object.fromEntries(
 ) as Record<string, TabName>;
 
 const branches = ["전체 지점", "본점", "더현대 서울", "무역센터점", "판교점", "부산점", "울산점"];
+const riskStatusOptions: RiskStatus[] = ["위험", "주의", "관찰"];
 
 const tourSteps: TourStep[] = [
   {
@@ -119,7 +122,7 @@ const pageMeta: Record<TabName, { eyebrow: string; title: string; subtitle: stri
   "운영 요약": { eyebrow: "HYUNDAI DEPARTMENT STORE · INVENTORY CONTROL", title: "악성재고 예방 관제실", subtitle: "악성재고가 되기 전에 감지하고, 실질 마진이 가장 높은 대응을 찾습니다." },
   "위험 예측": { eyebrow: "EARLY WARNING · PREDICTIVE RISK", title: "악성재고 전환 예측", subtitle: "판매·재고·시즌·외부 신호를 결합해 위험 전환 시점과 원인을 확인합니다." },
   "지점 재고": { eyebrow: "STORE NETWORK · INVENTORY BALANCE", title: "지점 재고 재배치", subtitle: "과잉 지점과 수요 초과 지점을 연결하고 이동 비용까지 검증합니다." },
-  "AI 전략": { eyebrow: "AI MARGIN OPTIMIZER · ACTION LAB", title: "재고 처리 전략 연구소", subtitle: "이동·노출·할인·반품안을 같은 비용 기준으로 비교하고 조건을 조정합니다." },
+  "AI 전략": { eyebrow: "AI MARGIN OPTIMIZER · ACTION LAB", title: "재고 처리 전략 연구소", subtitle: "처리안을 비교하고 조건을 조정한 뒤 담당자 협업 채널로 판단 근거를 공유합니다." },
   "승인 관리": { eyebrow: "HUMAN IN THE LOOP · GOVERNANCE", title: "전략 승인 관리", subtitle: "AI 제안의 계약 권한, 가격 정책, 예상 효과를 확인하고 승인하거나 반려합니다." },
   "MCP 로그": { eyebrow: "TRACEABILITY · TOOL EXECUTION", title: "AI 판단 근거 로그", subtitle: "AI가 어떤 지점 데이터와 비용 정책을 사용했는지 실행 단계별로 추적합니다." },
 };
@@ -150,7 +153,7 @@ export default function Home() {
   const [discount, setDiscount] = useState(12);
   const [quantity, setQuantity] = useState(180);
   const [period, setPeriod] = useState(10);
-  const [riskThreshold, setRiskThreshold] = useState(50);
+  const [riskStatuses, setRiskStatuses] = useState<RiskStatus[]>(riskStatusOptions);
   const [destination, setDestination] = useState("부산점");
   const [transferQty, setTransferQty] = useState(180);
   const [approvalFilter, setApprovalFilter] = useState<"전체" | ApprovalStatus>("전체");
@@ -158,7 +161,9 @@ export default function Home() {
   const [selectedApproval, setSelectedApproval] = useState(initialApprovals[0].id);
   const [logFilter, setLogFilter] = useState("전체");
   const [selectedLog, setSelectedLog] = useState(mcpLogs[0].id);
-  const [approved, setApproved] = useState(false);
+  const [collaborationTool, setCollaborationTool] = useState<CollaborationTool>("slack");
+  const [collaborationTarget, setCollaborationTarget] = useState("#재고-전략-협업");
+  const [shared, setShared] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState("");
   const [tourStep, setTourStep] = useState<number | null>(location.pathname === "/" ? 0 : null);
@@ -168,7 +173,7 @@ export default function Home() {
     (branch === "전체 지점" || product.branch === branch) &&
     (category === "전체 카테고리" || product.category === category)
   );
-  const riskFiltered = filtered.filter((product) => product.transition >= riskThreshold);
+  const riskFiltered = filtered.filter((product) => riskStatuses.includes(product.status));
   const currentApproval = approvals.find((item) => item.id === selectedApproval) ?? approvals[0];
   const currentLog = mcpLogs.find((item) => item.id === selectedLog) ?? mcpLogs[0];
   const visibleApprovals = approvalFilter === "전체" ? approvals : approvals.filter((item) => item.status === approvalFilter);
@@ -192,7 +197,7 @@ export default function Home() {
 
   function runAnalysis() {
     setAnalyzing(true);
-    setApproved(false);
+    setShared(false);
     window.setTimeout(() => {
       setAnalyzing(false);
       notify(activeTab === "위험 예측" ? "최신 판매·시즌 신호로 위험 확률을 갱신했습니다." : "전 지점 수요와 비용을 반영해 최적 전략을 갱신했습니다.");
@@ -202,7 +207,7 @@ export default function Home() {
   function selectProduct(sku: string, goTo?: TabName) {
     setSelectedSku(sku);
     setStrategy("transfer");
-    setApproved(false);
+    setShared(false);
     if (goTo) navigate(tabRoutes[goTo]);
   }
 
@@ -215,42 +220,68 @@ export default function Home() {
     setTourStep(0);
   }
 
+  function toggleRiskStatus(status: RiskStatus) {
+    setRiskStatuses((current) => {
+      if (current.includes(status)) {
+        return current.length === 1 ? current : current.filter((item) => item !== status);
+      }
+      return riskStatusOptions.filter((item) => current.includes(item) || item === status);
+    });
+  }
+
   function updateApproval(id: string, status: ApprovalStatus) {
     setApprovals((items) => items.map((item) => item.id === id ? { ...item, status } : item));
     notify(status === "승인" ? `${id} 전략을 승인했습니다.` : `${id} 전략을 반려했습니다.`);
   }
 
+  function selectCollaborationTool(tool: CollaborationTool) {
+    setCollaborationTool(tool);
+    setCollaborationTarget(tool === "slack" ? "#재고-전략-협업" : "상품기획팀 · 재고 전략");
+    setShared(false);
+  }
+
+  function shareStrategy() {
+    const service = collaborationTool === "slack" ? "Slack" : "Teams";
+    setShared(true);
+    notify(`${service} ${collaborationTarget}에 전략 비교와 AI 판단 근거를 공유했습니다.`);
+  }
+
   const strategyCards = (
-    <div className="strategy-options">
-      <button className={strategy === "transfer" ? "selected" : ""} onClick={() => { setStrategy("transfer"); setApproved(false); }}>
-        <span className="option-top"><i>01</i><b>부산점 재고 이동</b><em className="best">AI 최적안</em></span>
-        <span className="option-route">무역센터점 <strong>{quantity}개</strong> → 부산점</span>
-        <span className="option-metrics"><i><small>예상 판매</small><b>312개</b></i><i><small>처리 비용</small><b>₩5.6M</b></i><i><small>실질 마진</small><b className="positive">₩19.8M</b></i></span>
-      </button>
-      <button className={strategy === "exposure" ? "selected" : ""} onClick={() => { setStrategy("exposure"); setApproved(false); }}>
-        <span className="option-top"><i>02</i><b>메인 노출 강화</b><em>브랜드 보호</em></span>
-        <span className="option-route">정상가 유지 · 1층 시즌존 {period}일</span>
-        <span className="option-metrics"><i><small>예상 판매</small><b>226개</b></i><i><small>처리 비용</small><b>₩5.8M</b></i><i><small>실질 마진</small><b>₩14.2M</b></i></span>
-      </button>
-      <button className={strategy === "discount" ? "selected" : ""} onClick={() => { setStrategy("discount"); setApproved(false); }}>
-        <span className="option-top"><i>03</i><b>점내 한정 할인</b><em>소진 우선</em></span>
-        <span className="option-route">무역센터점 한정 · {discount}% 할인</span>
-        <span className="option-metrics"><i><small>예상 판매</small><b>284개</b></i><i><small>할인 손실</small><b>₩8.2M</b></i><i><small>실질 마진</small><b>₩11.7M</b></i></span>
-      </button>
-      <button className={strategy === "return" ? "selected" : ""} onClick={() => { setStrategy("return"); setApproved(false); }}>
-        <span className="option-top"><i>04</i><b>입점사 반품 협의</b><em>특약매입</em></span>
-        <span className="option-route">잔여 {selected.stock}개 반품 · 수수료 반영</span>
-        <span className="option-metrics"><i><small>회수 가능</small><b>{selected.stock}개</b></i><i><small>정산 비용</small><b>₩3.1M</b></i><i><small>기회 마진</small><b>₩4.8M</b></i></span>
-      </button>
-    </div>
+    <>
+      <div className="comparison-legend" aria-hidden="true">
+        <span>처리 전략</span><span>예상 효과</span><span>비용</span><span>실질 마진</span>
+      </div>
+      <div className="strategy-options">
+        <button aria-pressed={strategy === "transfer"} className={strategy === "transfer" ? "selected" : ""} onClick={() => { setStrategy("transfer"); setShared(false); }}>
+          <span className="option-top"><i>01</i><b>부산점 재고 이동</b><em className="best">AI 최적안</em></span>
+          <span className="option-route">무역센터점 <strong>{quantity}개</strong> → 부산점</span>
+          <span className="option-metrics"><i><small>예상 판매</small><b>312개</b></i><i><small>처리 비용</small><b>₩5.6M</b></i><i><small>실질 마진</small><b className="positive">₩19.8M</b></i></span>
+        </button>
+        <button aria-pressed={strategy === "exposure"} className={strategy === "exposure" ? "selected" : ""} onClick={() => { setStrategy("exposure"); setShared(false); }}>
+          <span className="option-top"><i>02</i><b>메인 노출 강화</b><em>브랜드 보호</em></span>
+          <span className="option-route">정상가 유지 · 1층 시즌존 {period}일</span>
+          <span className="option-metrics"><i><small>예상 판매</small><b>226개</b></i><i><small>처리 비용</small><b>₩5.8M</b></i><i><small>실질 마진</small><b>₩14.2M</b></i></span>
+        </button>
+        <button aria-pressed={strategy === "discount"} className={strategy === "discount" ? "selected" : ""} onClick={() => { setStrategy("discount"); setShared(false); }}>
+          <span className="option-top"><i>03</i><b>점내 한정 할인</b><em>소진 우선</em></span>
+          <span className="option-route">무역센터점 한정 · {discount}% 할인</span>
+          <span className="option-metrics"><i><small>예상 판매</small><b>284개</b></i><i><small>할인 손실</small><b>₩8.2M</b></i><i><small>실질 마진</small><b>₩11.7M</b></i></span>
+        </button>
+        <button aria-pressed={strategy === "return"} className={strategy === "return" ? "selected" : ""} onClick={() => { setStrategy("return"); setShared(false); }}>
+          <span className="option-top"><i>04</i><b>입점사 반품 협의</b><em>특약매입</em></span>
+          <span className="option-route">잔여 {selected.stock}개 반품 · 수수료 반영</span>
+          <span className="option-metrics"><i><small>회수 가능</small><b>{selected.stock}개</b></i><i><small>정산 비용</small><b>₩3.1M</b></i><i><small>기회 마진</small><b>₩4.8M</b></i></span>
+        </button>
+      </div>
+    </>
   );
 
   const simulator = (
     <>
       <div className="sim-controls">
-        <label><span>할인율 <b>{discount}%</b></span><input aria-label="할인율" type="range" min="0" max="30" value={discount} onChange={(event) => { setDiscount(Number(event.target.value)); setApproved(false); }} /></label>
-        <label><span>처리 수량 <b>{quantity}개</b></span><input aria-label="처리 수량" type="range" min="60" max={selected.stock} step="10" value={Math.min(quantity, selected.stock)} onChange={(event) => { setQuantity(Number(event.target.value)); setApproved(false); }} /></label>
-        <label><span>운영 기간</span><select value={period} onChange={(event) => { setPeriod(Number(event.target.value)); setApproved(false); }}><option value="7">7일</option><option value="10">10일</option><option value="14">14일</option><option value="21">21일</option></select></label>
+        <label><span>할인율 <b>{discount}%</b></span><input aria-label="할인율" type="range" min="0" max="30" value={discount} onChange={(event) => { setDiscount(Number(event.target.value)); setShared(false); }} /></label>
+        <label><span>처리 수량 <b>{quantity}개</b></span><input aria-label="처리 수량" type="range" min="60" max={selected.stock} step="10" value={Math.min(quantity, selected.stock)} onChange={(event) => { setQuantity(Number(event.target.value)); setShared(false); }} /></label>
+        <label><span>운영 기간</span><select value={period} onChange={(event) => { setPeriod(Number(event.target.value)); setShared(false); }}><option value="7">7일</option><option value="10">10일</option><option value="14">14일</option><option value="21">21일</option></select></label>
       </div>
       <div className="margin-result">
         <div><span>예상 소진</span><b>{simulation.sold}<small>개</small></b></div>
@@ -259,11 +290,34 @@ export default function Home() {
         <div className="primary-result"><span>예상 실질 마진</span><b>₩{simulation.grossMargin.toFixed(1)}<small>M</small></b></div>
       </div>
       <div className="prevented-loss"><span>방어 가능한 재고 손실</span><b>₩{simulation.preventedLoss.toFixed(1)}M</b><em>현재안 대비 +18.4%</em></div>
-      <div className="approval-checks"><span>✓ 계약 권한 확인</span><span>✓ 최소 마진율 통과</span><span>✓ 이동 가능 재고 확인</span></div>
+      <section className="collaboration-handoff" aria-label="담당자 협업 채널 선택">
+        <div className="handoff-heading">
+          <div><span>COLLABORATION HANDOFF</span><b>담당자에게 전략 공유</b></div>
+          <small>전략 비교표 · 비용 시뮬레이션 · AI 판단 로그 포함</small>
+        </div>
+        <div className="collaboration-tools">
+          <button className={collaborationTool === "slack" ? "selected" : ""} aria-pressed={collaborationTool === "slack"} onClick={() => selectCollaborationTool("slack")}>
+            <span className="collab-logo slack-logo">#</span><span><b>Slack</b><small>채널로 공유</small></span><i>✓</i>
+          </button>
+          <button className={collaborationTool === "teams" ? "selected" : ""} aria-pressed={collaborationTool === "teams"} onClick={() => selectCollaborationTool("teams")}>
+            <span className="collab-logo teams-logo">T</span><span><b>Teams</b><small>팀으로 공유</small></span><i>✓</i>
+          </button>
+        </div>
+        <label className="collaboration-target">
+          <span>공유 대상</span>
+          <select value={collaborationTarget} onChange={(event) => { setCollaborationTarget(event.target.value); setShared(false); }}>
+            {collaborationTool === "slack" ? (
+              <><option>#재고-전략-협업</option><option>#상품기획-의사결정</option><option>#부산점-운영</option></>
+            ) : (
+              <><option>상품기획팀 · 재고 전략</option><option>영업전략실 · 의사결정</option><option>부산점 · 운영 채널</option></>
+            )}
+          </select>
+        </label>
+      </section>
       <div className="strategy-actions">
         <button className="secondary-button" onClick={() => notify("현재 조건으로 비용과 수요를 다시 계산했습니다.")}>효과 다시 계산</button>
-        <button className={`approve-button ${approved ? "approved" : ""}`} onClick={() => { setApproved(true); notify("전략 DC-0723-011이 승인 대기열에 등록됐습니다."); }}>
-          {approved ? "✓ 승인 요청 완료" : "이 전략으로 승인 요청"}
+        <button className={`share-strategy-button ${collaborationTool} ${shared ? "shared" : ""}`} onClick={shareStrategy}>
+          {shared ? "✓ 담당자 공유 완료" : `${collaborationTool === "slack" ? "Slack" : "Teams"}으로 전략 공유`}
         </button>
       </div>
     </>
@@ -344,7 +398,24 @@ export default function Home() {
         {activeTab === "위험 예측" && (
           <section className="tab-layout">
             <article className="panel tab-main">
-              <div className="panel-head"><div><p className="eyebrow">RISK MODEL · 30 DAY HORIZON</p><h2>예측 대상 상품</h2></div><label className="threshold-control"><span>경보 기준</span><input aria-label="경보 기준" type="range" min="20" max="90" value={riskThreshold} onChange={(event) => setRiskThreshold(Number(event.target.value))} /><b>{riskThreshold}%</b></label></div>
+              <div className="panel-head">
+                <div><p className="eyebrow">RISK MODEL · 30 DAY HORIZON</p><h2>예측 대상 상품</h2></div>
+                <div className="risk-status-filter">
+                  <span>전환 상태</span>
+                  <div className="risk-status-toggle" role="group" aria-label="전환 상태 필터">
+                    {riskStatusOptions.map((status) => (
+                      <button
+                        key={status}
+                        className={`${status} ${riskStatuses.includes(status) ? "active" : ""}`}
+                        aria-pressed={riskStatuses.includes(status)}
+                        onClick={() => toggleRiskStatus(status)}
+                      >
+                        <i />{status}<b>{filtered.filter((product) => product.status === status).length}</b>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <ProductTable items={riskFiltered} selectedSku={selectedSku} onSelect={(sku) => selectProduct(sku)} />
             </article>
             <aside className="tab-side">
