@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-type TabName = "운영 요약" | "위험 예측" | "지점 재고" | "AI 전략" | "승인 관리" | "MCP 로그";
+type TabName = "메인 대시보드" | "전체 재고 조회" | "악성 재고 조회" | "향후 수요 및 잔여 재고 분석" | "AI 전략 생성" | "전략 기록" | "통계";
 type Strategy = "transfer" | "exposure" | "discount" | "return";
-type ApprovalStatus = "대기" | "승인" | "반려";
 type CollaborationTool = "slack" | "teams";
 type RiskStatus = "위험" | "주의" | "관찰";
+type InventoryStatus = "양호" | "위험" | "악성";
+type AnalysisMode = "individual" | "integrated";
 
 type TourStep = {
   target: string;
@@ -27,17 +28,20 @@ type Product = {
   transition: number;
   status: RiskStatus;
   event: string;
+  channel: "오프라인" | "온라인";
+  brand: string;
+  inventoryStatus: InventoryStatus;
 };
 
-type Approval = {
+type StrategyRecord = {
   id: string;
-  product: string;
-  action: string;
-  route: string;
+  title: string;
+  productSkus: string[];
+  mode: AnalysisMode;
+  createdAt: string;
+  summary: string;
   margin: string;
-  requester: string;
-  requestedAt: string;
-  status: ApprovalStatus;
+  status: "공유 완료" | "검토 중" | "초안";
 };
 
 type McpLog = {
@@ -53,29 +57,36 @@ type McpLog = {
 };
 
 const products: Product[] = [
-  { sku: "TR-FS-24071", name: "프리미엄 레인부츠", category: "패션", branch: "무역센터점", contract: "특약매입", stock: 428, weeks: 7, salesDelta: -42, risk: 91, transition: 78, status: "위험", event: "장마 종료 예상 D-18" },
-  { sku: "PN-FD-10428", name: "애플망고 선물세트", category: "식품", branch: "판교점", contract: "직매입", stock: 186, weeks: 3, salesDelta: -31, risk: 88, transition: 71, status: "위험", event: "판매기한 D-12" },
-  { sku: "MC-EL-33082", name: "프리미엄 에어서큘레이터", category: "가전", branch: "더현대 서울", contract: "직매입", stock: 214, weeks: 9, salesDelta: -18, risk: 76, transition: 54, status: "주의", event: "폭염 수요 둔화" },
-  { sku: "US-LV-88210", name: "오크 사이드 테이블", category: "가구", branch: "울산점", contract: "특약매입", stock: 91, weeks: 14, salesDelta: -23, risk: 69, transition: 42, status: "주의", event: "보관 100일 초과" },
-  { sku: "HD-BT-55219", name: "비건 선케어 듀오", category: "뷰티", branch: "본점", contract: "특약매입", stock: 312, weeks: 6, salesDelta: -9, risk: 57, transition: 31, status: "관찰", event: "시즌 종료 D-39" },
+  { sku: "TR-FS-24071", name: "프리미엄 레인부츠", category: "패션", branch: "무역센터점", contract: "특약매입", stock: 428, weeks: 7, salesDelta: -42, risk: 91, transition: 78, status: "위험", event: "장마 종료 예상 D-18", channel: "오프라인", brand: "헌터", inventoryStatus: "악성" },
+  { sku: "PN-FD-10428", name: "애플망고 선물세트", category: "식품", branch: "판교점", contract: "직매입", stock: 186, weeks: 3, salesDelta: -31, risk: 88, transition: 71, status: "위험", event: "판매기한 D-12", channel: "오프라인", brand: "현대식품관", inventoryStatus: "악성" },
+  { sku: "MC-EL-33082", name: "프리미엄 에어서큘레이터", category: "가전", branch: "더현대 서울", contract: "직매입", stock: 214, weeks: 9, salesDelta: -18, risk: 76, transition: 54, status: "주의", event: "폭염 수요 둔화", channel: "오프라인", brand: "발뮤다", inventoryStatus: "위험" },
+  { sku: "US-LV-88210", name: "오크 사이드 테이블", category: "가구", branch: "울산점", contract: "특약매입", stock: 91, weeks: 14, salesDelta: -23, risk: 69, transition: 42, status: "주의", event: "보관 100일 초과", channel: "오프라인", brand: "무토", inventoryStatus: "악성" },
+  { sku: "HD-BT-55219", name: "비건 선케어 듀오", category: "뷰티", branch: "본점", contract: "특약매입", stock: 312, weeks: 6, salesDelta: -9, risk: 57, transition: 31, status: "관찰", event: "시즌 종료 D-39", channel: "오프라인", brand: "달바", inventoryStatus: "위험" },
+  { sku: "ON-FS-11902", name: "캐시미어 블렌드 코트", category: "패션", branch: "온라인몰", contract: "직매입", stock: 126, weeks: 2, salesDelta: 14, risk: 24, transition: 18, status: "관찰", event: "판매 정상", channel: "온라인", brand: "타임", inventoryStatus: "양호" },
+  { sku: "BS-FD-77126", name: "프리미엄 올리브오일", category: "식품", branch: "부산점", contract: "직매입", stock: 74, weeks: 2, salesDelta: 6, risk: 21, transition: 16, status: "관찰", event: "수요 안정", channel: "오프라인", brand: "오로바일렌", inventoryStatus: "양호" },
+  { sku: "ON-EL-44918", name: "무선 스틱 청소기", category: "가전", branch: "온라인몰", contract: "특약매입", stock: 338, weeks: 11, salesDelta: -27, risk: 82, transition: 63, status: "위험", event: "신제품 교체 D-21", channel: "온라인", brand: "다이슨", inventoryStatus: "악성" },
+  { sku: "HD-LV-50117", name: "세라믹 테이블 램프", category: "가구", branch: "본점", contract: "특약매입", stock: 48, weeks: 3, salesDelta: 2, risk: 32, transition: 22, status: "관찰", event: "판매 정상", channel: "오프라인", brand: "앤트레디션", inventoryStatus: "양호" },
+  { sku: "ON-BT-90812", name: "시그니처 향수 세트", category: "뷰티", branch: "온라인몰", contract: "직매입", stock: 207, weeks: 8, salesDelta: -16, risk: 71, transition: 51, status: "주의", event: "검색 유입 감소", channel: "온라인", brand: "딥티크", inventoryStatus: "위험" },
 ];
 
 const navItems: [string, TabName][] = [
-  ["⌂", "운영 요약"],
-  ["◇", "위험 예측"],
-  ["⇄", "지점 재고"],
-  ["✦", "AI 전략"],
-  ["▤", "승인 관리"],
-  ["↗", "MCP 로그"],
+  ["⌂", "메인 대시보드"],
+  ["▦", "전체 재고 조회"],
+  ["!", "악성 재고 조회"],
+  ["◇", "향후 수요 및 잔여 재고 분석"],
+  ["✦", "AI 전략 생성"],
+  ["▤", "전략 기록"],
+  ["↗", "통계"],
 ];
 
 const tabRoutes: Record<TabName, string> = {
-  "운영 요약": "/",
-  "위험 예측": "/risk",
-  "지점 재고": "/inventory",
-  "AI 전략": "/strategy",
-  "승인 관리": "/approvals",
-  "MCP 로그": "/logs",
+  "메인 대시보드": "/",
+  "전체 재고 조회": "/inventory",
+  "악성 재고 조회": "/bad-stock",
+  "향후 수요 및 잔여 재고 분석": "/demand",
+  "AI 전략 생성": "/strategy",
+  "전략 기록": "/history",
+  "통계": "/statistics",
 };
 
 const routeTabs = Object.fromEntries(
@@ -84,13 +95,6 @@ const routeTabs = Object.fromEntries(
 
 const branches = ["전체 지점", "본점", "더현대 서울", "무역센터점", "판교점", "부산점", "울산점"];
 const riskStatusOptions: RiskStatus[] = ["위험", "주의", "관찰"];
-const inventoryCategories = [
-  { name: "패션", code: "FS", skuCount: "7,842", stock: "18.4만", risk: 12, balance: 68, description: "의류 · 잡화 · 시즌 상품" },
-  { name: "식품", code: "FD", skuCount: "4,126", stock: "7.2만", risk: 8, balance: 81, description: "신선 · 가공 · 선물세트" },
-  { name: "가전", code: "EL", skuCount: "3,918", stock: "5.4만", risk: 5, balance: 76, description: "생활 · 계절 · 디지털" },
-  { name: "가구", code: "LV", skuCount: "2,746", stock: "3.1만", risk: 4, balance: 73, description: "리빙 · 가구 · 홈데코" },
-  { name: "뷰티", code: "BT", skuCount: "6,050", stock: "9.6만", risk: 5, balance: 88, description: "화장품 · 향수 · 케어" },
-];
 const strategyMeta: Record<Strategy, { name: string; summary: string }> = {
   transfer: { name: "부산점 재고 이동", summary: "수요가 유지되는 부산점으로 재고를 이동해 정상가 판매 기회를 확보합니다." },
   exposure: { name: "메인 노출 강화", summary: "정상가를 유지하면서 시즌존 노출을 확대해 브랜드와 마진을 함께 보호합니다." },
@@ -140,19 +144,21 @@ const tourSteps: TourStep[] = [
 ];
 
 const pageMeta: Record<TabName, { eyebrow: string; title: string; subtitle: string }> = {
-  "운영 요약": { eyebrow: "HYUNDAI DEPARTMENT STORE · INVENTORY CONTROL", title: "악성재고 예방 관제실", subtitle: "악성재고가 되기 전에 감지하고, 실질 마진이 가장 높은 대응을 찾습니다." },
-  "위험 예측": { eyebrow: "EARLY WARNING · PREDICTIVE RISK", title: "악성재고 전환 예측", subtitle: "판매·재고·시즌·외부 신호를 결합해 위험 전환 시점과 원인을 확인합니다." },
-  "지점 재고": { eyebrow: "STORE NETWORK · INVENTORY BALANCE", title: "지점 재고 재배치", subtitle: "과잉 지점과 수요 초과 지점을 연결하고 이동 비용까지 검증합니다." },
-  "AI 전략": { eyebrow: "AI MARGIN OPTIMIZER · ACTION LAB", title: "재고 처리 전략 연구소", subtitle: "처리안을 비교하고 조건을 조정한 뒤 담당자 협업 채널로 판단 근거를 공유합니다." },
-  "승인 관리": { eyebrow: "HUMAN IN THE LOOP · GOVERNANCE", title: "전략 승인 관리", subtitle: "AI 제안의 계약 권한, 가격 정책, 예상 효과를 확인하고 승인하거나 반려합니다." },
-  "MCP 로그": { eyebrow: "TRACEABILITY · TOOL EXECUTION", title: "AI 판단 근거 로그", subtitle: "AI가 어떤 지점 데이터와 비용 정책을 사용했는지 실행 단계별로 추적합니다." },
+  "메인 대시보드": { eyebrow: "HYUNDAI DEPARTMENT STORE · INVENTORY CONTROL", title: "재고 운영 대시보드", subtitle: "전체 재고 상태와 악성 전환 위험, 최근 AI 전략 효과를 한눈에 확인합니다." },
+  "전체 재고 조회": { eyebrow: "MASTER INVENTORY · SEARCH & FILTER", title: "전체 재고 조회", subtitle: "지점, 브랜드, 카테고리와 상태를 조합해 모든 재고를 탐색합니다." },
+  "악성 재고 조회": { eyebrow: "BAD STOCK · PRIORITY CONTROL", title: "악성 재고 조회", subtitle: "즉시 대응이 필요한 악성 재고와 최근 생성 전략을 확인합니다." },
+  "향후 수요 및 잔여 재고 분석": { eyebrow: "DEMAND FORECAST · REMAINING STOCK", title: "향후 수요 및 잔여 재고 분석", subtitle: "판매·재고·시즌 신호를 결합해 향후 수요와 잔여 재고를 예측합니다." },
+  "AI 전략 생성": { eyebrow: "AI MARGIN OPTIMIZER · GENERATION LAB", title: "AI 전략 생성", subtitle: "악성 재고를 다중 선택하고 개별 또는 통합 전략을 생성합니다." },
+  "전략 기록": { eyebrow: "STRATEGY ARCHIVE · HISTORY", title: "전략 기록", subtitle: "개별·통합 분석으로 생성된 모든 전략과 변경 이력을 확인합니다." },
+  "통계": { eyebrow: "INVENTORY ANALYTICS · PERFORMANCE", title: "재고 운영 통계", subtitle: "카테고리별 재고 건전성과 AI 전략의 누적 효과를 분석합니다." },
 };
 
-const initialApprovals: Approval[] = [
-  { id: "DC-0723-011", product: "프리미엄 레인부츠", action: "부산점 재고 이동", route: "무역센터점 → 부산점 · 180개", margin: "₩19.8M", requester: "최우진", requestedAt: "10:24", status: "대기" },
-  { id: "DC-0723-009", product: "애플망고 선물세트", action: "식품관 타임세일", route: "판교점 · 15% · 3일", margin: "₩8.4M", requester: "김영만", requestedAt: "09:48", status: "대기" },
-  { id: "DC-0722-031", product: "프리미엄 에어서큘레이터", action: "메인 노출 강화", route: "더현대 서울 · 1층 · 7일", margin: "₩12.6M", requester: "이주영", requestedAt: "어제", status: "대기" },
-  { id: "DC-0722-028", product: "오크 사이드 테이블", action: "입점사 반품 협의", route: "울산점 · 잔여 91개", margin: "₩3.1M", requester: "김준하", requestedAt: "어제", status: "대기" },
+const initialStrategyRecords: StrategyRecord[] = [
+  { id: "ST-0724-018", title: "프리미엄 레인부츠 재고 이동 전략", productSkus: ["TR-FS-24071"], mode: "individual", createdAt: "오늘 10:24", summary: "무역센터점 재고 180개를 부산점으로 이동해 정상가 판매를 유지합니다.", margin: "₩19.8M", status: "공유 완료" },
+  { id: "ST-0724-017", title: "식품 판매기한 대응 통합 전략", productSkus: ["PN-FD-10428", "BS-FD-77126"], mode: "integrated", createdAt: "오늘 09:48", summary: "판매기한과 지점 수요를 기준으로 타임세일과 점간 이동을 함께 실행합니다.", margin: "₩14.6M", status: "검토 중" },
+  { id: "ST-0723-041", title: "에어서큘레이터 노출 강화 전략", productSkus: ["MC-EL-33082"], mode: "individual", createdAt: "어제 16:32", summary: "더현대 서울 1층 시즌존 노출을 7일간 확대합니다.", margin: "₩12.6M", status: "공유 완료" },
+  { id: "ST-0723-038", title: "온라인 가전 악성재고 처리 전략", productSkus: ["ON-EL-44918"], mode: "individual", createdAt: "어제 14:10", summary: "신제품 교체 전에 온라인 전용 번들 할인으로 220개 소진을 목표로 합니다.", margin: "₩16.2M", status: "초안" },
+  { id: "ST-0722-029", title: "리빙 장기재고 통합 반품 전략", productSkus: ["US-LV-88210", "HD-LV-50117"], mode: "integrated", createdAt: "7월 22일", summary: "특약매입 상품의 반품 가능 수량을 통합해 입점사와 협상합니다.", margin: "₩7.9M", status: "공유 완료" },
 ];
 
 const mcpLogs: McpLog[] = [
@@ -166,7 +172,7 @@ const mcpLogs: McpLog[] = [
 export default function Home() {
   const location = useLocation();
   const navigate = useNavigate();
-  const activeTab = routeTabs[location.pathname] ?? "운영 요약";
+  const activeTab = routeTabs[location.pathname] ?? "메인 대시보드";
   const [selectedSku, setSelectedSku] = useState(products[0].sku);
   const [branch, setBranch] = useState("전체 지점");
   const [category, setCategory] = useState("전체 카테고리");
@@ -175,14 +181,6 @@ export default function Home() {
   const [quantity, setQuantity] = useState(180);
   const [period, setPeriod] = useState(10);
   const [riskStatuses, setRiskStatuses] = useState<RiskStatus[]>(riskStatusOptions);
-  const [destination, setDestination] = useState("부산점");
-  const [transferQty, setTransferQty] = useState(180);
-  const [inventoryCategory, setInventoryCategory] = useState<string | null>(null);
-  const [approvalFilter, setApprovalFilter] = useState<"전체" | ApprovalStatus>("전체");
-  const [approvals, setApprovals] = useState(initialApprovals);
-  const [selectedApproval, setSelectedApproval] = useState(initialApprovals[0].id);
-  const [logFilter, setLogFilter] = useState("전체");
-  const [selectedLog, setSelectedLog] = useState(mcpLogs[0].id);
   const [collaborationTool, setCollaborationTool] = useState<CollaborationTool>("slack");
   const [collaborationTarget, setCollaborationTarget] = useState("#재고-전략-협업");
   const [shared, setShared] = useState(false);
@@ -191,6 +189,17 @@ export default function Home() {
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState("");
   const [tourStep, setTourStep] = useState<number | null>(location.pathname === "/" ? 0 : null);
+  const [inventoryChannel, setInventoryChannel] = useState("전체 채널");
+  const [inventoryBrand, setInventoryBrand] = useState("전체 브랜드");
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState("전체 카테고리");
+  const [inventoryStatusFilter, setInventoryStatusFilter] = useState("전체 상태");
+  const [detailSku, setDetailSku] = useState<string | null>(null);
+  const [strategyRecords, setStrategyRecords] = useState(initialStrategyRecords);
+  const [selectedStrategyRecordId, setSelectedStrategyRecordId] = useState(initialStrategyRecords[0].id);
+  const [strategyRecordFilter, setStrategyRecordFilter] = useState<"전체" | AnalysisMode>("전체");
+  const [selectedStrategySkus, setSelectedStrategySkus] = useState<string[]>([]);
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("individual");
+  const [generatingStrategies, setGeneratingStrategies] = useState(false);
 
   const selected = products.find((product) => product.sku === selectedSku) ?? products[0];
   const filtered = products.filter((product) =>
@@ -198,11 +207,20 @@ export default function Home() {
     (category === "전체 카테고리" || product.category === category)
   );
   const riskFiltered = filtered.filter((product) => riskStatuses.includes(product.status));
-  const currentApproval = approvals.find((item) => item.id === selectedApproval) ?? approvals[0];
-  const currentLog = mcpLogs.find((item) => item.id === selectedLog) ?? mcpLogs[0];
   const collaborationContact = collaborationContacts[collaborationTarget];
-  const visibleApprovals = approvalFilter === "전체" ? approvals : approvals.filter((item) => item.status === approvalFilter);
-  const visibleLogs = logFilter === "전체" ? mcpLogs : mcpLogs.filter((item) => item.source === logFilter);
+  const malignantProducts = products.filter((product) => product.inventoryStatus === "악성");
+  const inventoryItems = products.filter((product) =>
+    (inventoryChannel === "전체 채널" || product.channel === inventoryChannel) &&
+    (inventoryBrand === "전체 브랜드" || product.brand === inventoryBrand) &&
+    (inventoryCategoryFilter === "전체 카테고리" || product.category === inventoryCategoryFilter) &&
+    (inventoryStatusFilter === "전체 상태" || product.inventoryStatus === inventoryStatusFilter)
+  );
+  const detailProduct = products.find((product) => product.sku === detailSku) ?? null;
+  const detailRecords = strategyRecords.filter((record) => detailSku && record.productSkus.includes(detailSku));
+  const currentStrategyRecord = strategyRecords.find((record) => record.id === selectedStrategyRecordId) ?? strategyRecords[0];
+  const visibleStrategyRecords = strategyRecordFilter === "전체"
+    ? strategyRecords
+    : strategyRecords.filter((record) => record.mode === strategyRecordFilter);
 
   const simulation = useMemo(() => {
     const strategyFactor = { transfer: 1.18, exposure: 1.08, discount: 1.02, return: 0.74 }[strategy];
@@ -225,7 +243,7 @@ export default function Home() {
     setShared(false);
     window.setTimeout(() => {
       setAnalyzing(false);
-      notify(activeTab === "위험 예측" ? "최신 판매·시즌 신호로 위험 확률을 갱신했습니다." : "전 지점 수요와 비용을 반영해 최적 전략을 갱신했습니다.");
+      notify(activeTab === "향후 수요 및 잔여 재고 분석" ? "최신 판매·시즌 신호로 위험 확률을 갱신했습니다." : "전 지점 수요와 비용을 반영해 최적 전략을 갱신했습니다.");
     }, 900);
   }
 
@@ -237,14 +255,59 @@ export default function Home() {
   }
 
   function openTab(tab: TabName) {
-    if (tab === "지점 재고") setInventoryCategory(null);
     navigate(tabRoutes[tab]);
   }
 
-  function openInventoryCategory(categoryName: string) {
-    const firstProduct = products.find((product) => product.category === categoryName);
-    if (firstProduct) selectProduct(firstProduct.sku);
-    setInventoryCategory(categoryName);
+  function openInventoryDetail(sku: string) {
+    const latest = strategyRecords.find((record) => record.productSkus.includes(sku));
+    setDetailSku(sku);
+    if (latest) setSelectedStrategyRecordId(latest.id);
+  }
+
+  function toggleStrategySku(sku: string) {
+    setSelectedStrategySkus((current) =>
+      current.includes(sku) ? current.filter((item) => item !== sku) : [...current, sku]
+    );
+  }
+
+  function generateBulkStrategies() {
+    if (selectedStrategySkus.length === 0) {
+      notify("전략을 생성할 악성 재고를 한 건 이상 선택해주세요.");
+      return;
+    }
+    setGeneratingStrategies(true);
+    window.setTimeout(() => {
+      const stamp = Date.now().toString().slice(-5);
+      const newRecords: StrategyRecord[] = analysisMode === "individual"
+        ? selectedStrategySkus.map((sku, index) => {
+            const product = products.find((item) => item.sku === sku) ?? products[0];
+            return {
+              id: `ST-${stamp}-${index + 1}`,
+              title: `${product.name} 개별 처리 전략`,
+              productSkus: [sku],
+              mode: "individual",
+              createdAt: "방금 전",
+              summary: `${product.branch}의 판매 속도와 계약 조건을 반영해 최적 처리안을 생성했습니다.`,
+              margin: `₩${(8.4 + index * 3.1).toFixed(1)}M`,
+              status: "초안",
+            };
+          })
+        : [{
+            id: `ST-${stamp}-01`,
+            title: `${selectedStrategySkus.length}개 재고 통합 처리 전략`,
+            productSkus: selectedStrategySkus,
+            mode: "integrated",
+            createdAt: "방금 전",
+            summary: "선택 재고의 지점 수요와 물류 비용을 통합해 이동·할인 실행 순서를 최적화했습니다.",
+            margin: `₩${(selectedStrategySkus.length * 11.7).toFixed(1)}M`,
+            status: "초안",
+          }];
+      setStrategyRecords((current) => [...newRecords, ...current]);
+      setSelectedStrategyRecordId(newRecords[0].id);
+      setGeneratingStrategies(false);
+      notify(`${newRecords.length}건의 ${analysisMode === "individual" ? "개별" : "통합"} 전략을 생성했습니다.`);
+      navigate(tabRoutes["전략 기록"]);
+    }, 900);
   }
 
   function startTour() {
@@ -259,11 +322,6 @@ export default function Home() {
       }
       return riskStatusOptions.filter((item) => current.includes(item) || item === status);
     });
-  }
-
-  function updateApproval(id: string, status: ApprovalStatus) {
-    setApprovals((items) => items.map((item) => item.id === id ? { ...item, status } : item));
-    notify(status === "승인" ? `${id} 전략을 승인했습니다.` : `${id} 전략을 반려했습니다.`);
   }
 
   function selectCollaborationTool(tool: CollaborationTool) {
@@ -432,7 +490,7 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
         <nav aria-label="주요 메뉴" data-tour="navigation">
           {navItems.map(([icon, label]) => (
             <button className={`nav-item ${activeTab === label ? "active" : ""}`} key={label} onClick={() => openTab(label)}>
-              <span>{icon}</span>{label}{label === "승인 관리" && <em>{approvals.filter((item) => item.status === "대기").length}</em>}
+              <span>{icon}</span>{label}{label === "악성 재고 조회" && <em>{malignantProducts.length}</em>}
             </button>
           ))}
         </nav>
@@ -450,11 +508,11 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
             <button className="tour-trigger" onClick={startTour}><span>?</span> 가이드</button>
             <button className="icon-button" aria-label="알림" onClick={() => notify("새 위험 전환 알림 6건을 확인했습니다.")}>♢<span>6</span></button>
             <div className="updated"><span>마지막 데이터 동기화</span><b>오늘 10:24</b></div>
-            {(activeTab === "운영 요약" || activeTab === "위험 예측" || activeTab === "AI 전략") && <button className="primary-button" data-tour={activeTab === "운영 요약" ? "analyze" : undefined} onClick={runAnalysis} disabled={analyzing}><span>✦</span>{analyzing ? "분석 중…" : activeTab === "위험 예측" ? "예측 다시 실행" : "최적 전략 분석"}</button>}
+            {(activeTab === "메인 대시보드" || activeTab === "향후 수요 및 잔여 재고 분석") && <button className="primary-button" data-tour={activeTab === "메인 대시보드" ? "analyze" : undefined} onClick={runAnalysis} disabled={analyzing}><span>✦</span>{analyzing ? "분석 중…" : activeTab === "향후 수요 및 잔여 재고 분석" ? "예측 다시 실행" : "최적 전략 분석"}</button>}
           </div>
         </header>
 
-        {(activeTab === "운영 요약" || activeTab === "위험 예측" || activeTab === "지점 재고") && (
+        {(activeTab === "메인 대시보드" || activeTab === "향후 수요 및 잔여 재고 분석") && (
           <div className="filterbar">
             <div className="filter-summary"><span className="live-dot" />현대백화점 16개점 통합 재고 <b>·</b> 24,682 SKU <b>·</b> 직매입/특약매입 구분 적용</div>
             <div className="filters">
@@ -466,7 +524,7 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
           </div>
         )}
 
-        {activeTab === "운영 요약" && (
+        {activeTab === "메인 대시보드" && (
           <>
             <section className="kpi-grid" aria-label="핵심 운영 지표" data-tour="kpis">
               <article className="kpi-card critical"><div className="kpi-head"><span>악성재고 전환 예상액</span><i>향후 30일</i></div><div className="kpi-value"><b>₩3.12</b><em>억원</em></div><div className="kpi-foot"><strong>▲ 8.6%</strong><span>조기 대응이 필요한 증가세</span></div><div className="mini-bars">{[38,42,49,44,61,57,74,68,82,93].map((height,index)=><i key={index} style={{height:`${height}%`}} />)}</div></article>
@@ -476,7 +534,7 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
             </section>
             <section className="new-dashboard-grid">
               <article className="panel watch-panel" data-tour="risk-table">
-                <div className="panel-head"><div><p className="eyebrow">EARLY WARNING · RISK TRANSITION</p><h2>악성재고 전환 예측</h2></div><button onClick={() => openTab("위험 예측")}>상세 예측 <span>→</span></button></div>
+                <div className="panel-head"><div><p className="eyebrow">EARLY WARNING · RISK TRANSITION</p><h2>악성재고 전환 예측</h2></div><button onClick={() => openTab("향후 수요 및 잔여 재고 분석")}>상세 예측 <span>→</span></button></div>
                 <ProductTable items={filtered} selectedSku={selectedSku} onSelect={(sku) => selectProduct(sku)} />
               </article>
               <article className="panel signal-panel">
@@ -484,19 +542,19 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
                 <RiskSignals product={selected} />
               </article>
               <article className="panel branch-panel" data-tour="store-map">
-                <div className="panel-head"><div><p className="eyebrow">STORE DEMAND MAP</p><h2>지점별 이동 타당성</h2></div><button onClick={() => openTab("지점 재고")}>재배치 설계 <span>→</span></button></div>
+                <div className="panel-head"><div><p className="eyebrow">STORE DEMAND MAP</p><h2>지점별 이동 타당성</h2></div><button onClick={() => openTab("전체 재고 조회")}>재고 탐색 <span>→</span></button></div>
                 <BranchList />
               </article>
               <article className="panel log-panel">
                 <div className="panel-head"><div><p className="eyebrow">AI TRACEABILITY</p><h2>최근 MCP 실행</h2></div><span className="live-badge"><i /> LIVE</span></div>
                 <CompactLogs logs={mcpLogs.slice(0, 4)} />
-                <button className="log-button" onClick={() => openTab("MCP 로그")}>전체 판단 근거 보기 <span>↗</span></button>
+                <button className="log-button" onClick={() => openTab("통계")}>운영 통계 보기 <span>↗</span></button>
               </article>
             </section>
           </>
         )}
 
-        {activeTab === "위험 예측" && (
+        {activeTab === "향후 수요 및 잔여 재고 분석" && (
           <section className="tab-layout">
             <article className="panel tab-main">
               <div className="panel-head">
@@ -524,70 +582,66 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
               <article className="panel prediction-timeline">
                 <div className="panel-head"><div><p className="eyebrow">TRANSITION TIMELINE</p><h2>위험 전환 예상</h2></div></div>
                 <div className="timeline-chart"><div><span>오늘</span><i className="safe" /><b>관찰</b></div><div><span>D+7</span><i className="warn" /><b>주의 61%</b></div><div><span>D+18</span><i className="danger" /><b>위험 78%</b></div><div><span>D+30</span><i className="dead" /><b>악성 전환</b></div></div>
-                <button className="full-action" onClick={() => { openTab("AI 전략"); notify(`${selected.name} 전략 분석을 시작했습니다.`); }}>이 상품의 예방 전략 설계 →</button>
+                <button className="full-action" onClick={() => { openTab("AI 전략 생성"); setSelectedStrategySkus([selected.sku]); notify(`${selected.name} 전략 분석을 시작했습니다.`); }}>이 상품의 예방 전략 설계 →</button>
               </article>
             </aside>
           </section>
         )}
 
-        {activeTab === "지점 재고" && inventoryCategory === null && (
-          <section className="inventory-category-page">
-            <div className="inventory-overview-head">
-              <div><p className="eyebrow">CATEGORY INVENTORY · NETWORK OVERVIEW</p><h2>카테고리별 통합 재고</h2><span>카테고리를 선택하면 16개 지점의 수급 현황과 AI 추천 이동안을 확인할 수 있습니다.</span></div>
-              <div className="inventory-overview-summary"><span>전체 SKU <b>24,682</b></span><span>위험 카테고리 <b>5</b></span><span>연결 지점 <b>16</b></span></div>
-            </div>
-            <div className="inventory-category-grid">
-              {inventoryCategories.map((item, index) => (
-                <button className={`inventory-category-card category-${index + 1}`} key={item.name} onClick={() => openInventoryCategory(item.name)}>
-                  <span className="category-card-top"><i>{item.code}</i><span><b>{item.name}</b><small>{item.description}</small></span><em>{item.risk}개 위험</em></span>
-                  <span className="category-card-metrics"><span><small>운영 SKU</small><b>{item.skuCount}</b></span><span><small>통합 재고</small><b>{item.stock}<em>개</em></b></span></span>
-                  <span className="category-balance"><span><small>지점 재고 균형도</small><b>{item.balance}%</b></span><i><em style={{ width: `${item.balance}%` }} /></i></span>
-                  <strong>지점별 수급 현황 보기 <span>→</span></strong>
-                </button>
-              ))}
-            </div>
-            <aside className="inventory-guide">
-              <span>HOW TO READ</span>
-              <p><b>01</b> 카테고리 선택</p><i>→</i><p><b>02</b> 상품별 지점 수급 확인</p><i>→</i><p><b>03</b> AI 추천 이동안 검증</p>
-            </aside>
-          </section>
+        {activeTab === "전체 재고 조회" && (
+          <InventoryLookup
+            items={inventoryItems}
+            totalCount={products.length}
+            records={strategyRecords}
+            filters={
+              <div className="inventory-master-filters">
+                <label><span>채널</span><select value={inventoryChannel} onChange={(event) => setInventoryChannel(event.target.value)}><option>전체 채널</option><option>오프라인</option><option>온라인</option></select></label>
+                <label><span>브랜드</span><select value={inventoryBrand} onChange={(event) => setInventoryBrand(event.target.value)}><option>전체 브랜드</option>{[...new Set(products.map((product) => product.brand))].map((brandName) => <option key={brandName}>{brandName}</option>)}</select></label>
+                <label><span>상품 카테고리</span><select value={inventoryCategoryFilter} onChange={(event) => setInventoryCategoryFilter(event.target.value)}><option>전체 카테고리</option>{[...new Set(products.map((product) => product.category))].map((categoryName) => <option key={categoryName}>{categoryName}</option>)}</select></label>
+                <label><span>재고 상태</span><select value={inventoryStatusFilter} onChange={(event) => setInventoryStatusFilter(event.target.value)}><option>전체 상태</option><option>양호</option><option>위험</option><option>악성</option></select></label>
+                <button onClick={() => { setInventoryChannel("전체 채널"); setInventoryBrand("전체 브랜드"); setInventoryCategoryFilter("전체 카테고리"); setInventoryStatusFilter("전체 상태"); }}>필터 초기화</button>
+              </div>
+            }
+            onOpenDetail={openInventoryDetail}
+          />
         )}
 
-        {activeTab === "지점 재고" && inventoryCategory !== null && (
-          <>
-            <div className="inventory-breadcrumb">
-              <button onClick={() => setInventoryCategory(null)}>전체 카테고리</button><span>›</span><b>{inventoryCategory}</b><em>16개 지점 통합 수급 현황</em>
-            </div>
-          <section className="tab-layout inventory-tab">
-            <article className="panel tab-main">
-              <div className="panel-head"><div><p className="eyebrow">STORE INVENTORY MATRIX · {inventoryCategory.toUpperCase()}</p><h2>{selected.name} 지점별 수급 현황</h2></div><select className="product-select" value={selectedSku} onChange={(event) => selectProduct(event.target.value)}>{products.filter((product) => product.category === inventoryCategory).map((product) => <option value={product.sku} key={product.sku}>{product.name}</option>)}</select></div>
-              <div className="store-cards">
-                <StoreCard code="MC" name="무역센터점" stock={428} velocity={21} weeks={20.4} state="과잉" />
-                <StoreCard code="BS" name="부산점" stock={38} velocity={56} weeks={0.7} state="부족" />
-                <StoreCard code="PN" name="판교점" stock={62} velocity={31} weeks={2.0} state="적정" />
-                <StoreCard code="US" name="울산점" stock={51} velocity={28} weeks={1.8} state="적정" />
-                <StoreCard code="HD" name="본점" stock={73} velocity={24} weeks={3.0} state="적정" />
-                <StoreCard code="SE" name="더현대 서울" stock={44} velocity={37} weeks={1.2} state="부족" />
+        {activeTab === "악성 재고 조회" && (
+          <InventoryLookup
+            items={malignantProducts}
+            totalCount={malignantProducts.length}
+            records={strategyRecords}
+            malignant
+            onOpenDetail={openInventoryDetail}
+          />
+        )}
+
+        {activeTab === "AI 전략 생성" && (
+          <section className="strategy-page">
+            <article className="bulk-strategy-builder">
+              <div className="bulk-builder-head">
+                <div><p className="eyebrow">MULTI SELECT · GENERATION MODE</p><h2>분석할 악성 재고 선택</h2><span>여러 건을 선택한 뒤 상품별 개별 전략 또는 하나의 통합 전략으로 생성할 수 있습니다.</span></div>
+                <strong>{selectedStrategySkus.length}<small>건 선택</small></strong>
               </div>
-              <div className="transfer-flow">
-                <div><span>출발 지점</span><b>무역센터점</b><small>가용 재고 368개</small></div><strong>→</strong><div><span>도착 지점</span><select value={destination} onChange={(event) => setDestination(event.target.value)}><option>부산점</option><option>더현대 서울</option><option>판교점</option><option>울산점</option></select><small>21일 예상 부족 274개</small></div><strong>×</strong><div><span>이동 수량</span><input type="number" min="10" max="368" value={transferQty} onChange={(event) => setTransferQty(Number(event.target.value))} /><small>권장 180개</small></div>
+              <div className="bulk-builder-grid">
+                <div className="bulk-product-list">
+                  {malignantProducts.map((product) => (
+                    <button key={product.sku} className={selectedStrategySkus.includes(product.sku) ? "selected" : ""} onClick={() => toggleStrategySku(product.sku)}>
+                      <i>{selectedStrategySkus.includes(product.sku) ? "✓" : ""}</i>
+                      <span><b>{product.name}</b><small>{product.sku} · {product.branch} · {product.brand}</small></span>
+                      <em>{product.stock}개</em>
+                      <strong>{product.transition}%</strong>
+                    </button>
+                  ))}
+                </div>
+                <aside className="analysis-mode-panel">
+                  <span>분석 방식</span>
+                  <button className={analysisMode === "individual" ? "selected" : ""} onClick={() => setAnalysisMode("individual")}><i>01</i><span><b>각각 분석</b><small>{selectedStrategySkus.length || "N"}개 선택 시 전략 {selectedStrategySkus.length || "N"}건 생성</small></span></button>
+                  <button className={analysisMode === "integrated" ? "selected" : ""} onClick={() => setAnalysisMode("integrated")}><i>02</i><span><b>통합 분석</b><small>{selectedStrategySkus.length || "N"}개를 묶어 전략 1건 생성</small></span></button>
+                  <button className="generate-bulk-button" disabled={generatingStrategies} onClick={generateBulkStrategies}>✦ {generatingStrategies ? "전략 생성 중…" : "선택 재고 전략 생성"}</button>
+                </aside>
               </div>
             </article>
-            <aside className="tab-side">
-              <article className="panel transfer-summary">
-                <div className="panel-head"><div><p className="eyebrow">TRANSFER VALIDATION</p><h2>이동 타당성 검증</h2></div><span className="confidence">추천도 <b>94%</b></span></div>
-                <dl><div><dt>이동·포장 비용</dt><dd>₩{(3.4 + transferQty * 0.012).toFixed(1)}M</dd></div><div><dt>예상 추가 판매</dt><dd>{Math.round(transferQty * 0.86)}개</dd></div><div><dt>예상 실질 마진</dt><dd className="positive">₩{(transferQty * 0.11).toFixed(1)}M</dd></div><div><dt>재고 균형 개선</dt><dd>+{Math.min(96, Math.round(transferQty / 2))}%</dd></div></dl>
-                <div className="approval-checks"><span>✓ 점간 이동 허용</span><span>✓ 도착점 보관 여유</span><span>✓ 입점사 통보 필요</span></div>
-                <button className="full-action" onClick={() => notify(`무역센터점 → ${destination} ${transferQty}개 이동 요청을 등록했습니다.`)}>재고 이동 요청 등록</button>
-              </article>
-              <article className="panel"><div className="panel-head"><div><p className="eyebrow">RECOMMENDED ROUTES</p><h2>AI 추천 이동안</h2></div></div><BranchList /></article>
-            </aside>
-          </section>
-          </>
-        )}
-
-        {activeTab === "AI 전략" && (
-          <section className="strategy-page">
             <div className="strategy-toolbar">
               <label><span>분석 상품</span><select value={selectedSku} onChange={(event) => selectProduct(event.target.value)}>{products.map((product) => <option value={product.sku} key={product.sku}>{product.name} · {product.branch}</option>)}</select></label>
               <div><span>계약 유형</span><b className={`contract ${selected.contract === "직매입" ? "direct" : ""}`}>{selected.contract}</b></div>
@@ -602,43 +656,35 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
           </section>
         )}
 
-        {activeTab === "승인 관리" && (
-          <section className="approval-page">
-            <div className="approval-tabs">{(["전체", "대기", "승인", "반려"] as const).map((status) => <button className={approvalFilter === status ? "active" : ""} onClick={() => setApprovalFilter(status)} key={status}>{status}<span>{status === "전체" ? approvals.length : approvals.filter((item) => item.status === status).length}</span></button>)}</div>
-            <div className="approval-grid">
-              <article className="panel approval-list">
-                <div className="approval-head"><span>전략 / 상품</span><span>예상 마진</span><span>요청자</span><span>상태</span></div>
-                {visibleApprovals.map((item) => <button className={selectedApproval === item.id ? "selected" : ""} key={item.id} onClick={() => setSelectedApproval(item.id)}><span><small>{item.id} · {item.requestedAt}</small><b>{item.action}</b><em>{item.product} · {item.route}</em></span><strong>{item.margin}</strong><span>{item.requester}</span><i className={`approval-status ${item.status}`}>{item.status}</i></button>)}
+        {activeTab === "전략 기록" && (
+          <section className="strategy-history-page">
+            <div className="history-filter">
+              {(["전체", "individual", "integrated"] as const).map((mode) => (
+                <button key={mode} className={strategyRecordFilter === mode ? "active" : ""} onClick={() => setStrategyRecordFilter(mode)}>
+                  {mode === "전체" ? "전체 기록" : mode === "individual" ? "개별 분석" : "통합 분석"}
+                  <span>{mode === "전체" ? strategyRecords.length : strategyRecords.filter((record) => record.mode === mode).length}</span>
+                </button>
+              ))}
+            </div>
+            <div className="history-layout">
+              <article className="panel strategy-record-list">
+                <div className="record-list-head"><span>생성 전략</span><span>분석 유형</span><span>예상 마진</span><span>상태</span></div>
+                {visibleStrategyRecords.map((record) => (
+                  <button key={record.id} className={selectedStrategyRecordId === record.id ? "selected" : ""} onClick={() => setSelectedStrategyRecordId(record.id)}>
+                    <span><small>{record.id} · {record.createdAt}</small><b>{record.title}</b><em>{record.summary}</em></span>
+                    <i className={`mode-badge ${record.mode}`}>{record.mode === "individual" ? "개별" : "통합"} · {record.productSkus.length} SKU</i>
+                    <strong>{record.margin}</strong>
+                    <u>{record.status}</u>
+                  </button>
+                ))}
               </article>
-              <aside className="panel approval-detail">
-                <div className="panel-head"><div><p className="eyebrow">APPROVAL DETAIL</p><h2>{currentApproval.id}</h2></div><span className={`approval-status ${currentApproval.status}`}>{currentApproval.status}</span></div>
-                <div className="approval-hero"><span>AI 제안 전략</span><b>{currentApproval.action}</b><p>{currentApproval.product}<br />{currentApproval.route}</p></div>
-                <dl><div><dt>예상 실질 마진</dt><dd>{currentApproval.margin}</dd></div><div><dt>예상 손실 방어</dt><dd>₩13.2M</dd></div><div><dt>전략 신뢰도</dt><dd>93%</dd></div><div><dt>정책 검증</dt><dd className="positive">3/3 통과</dd></div></dl>
-                <div className="approval-checks stacked"><span>✓ 계약상 실행 권한 확인</span><span>✓ 최소 판매가격 정책 통과</span><span>✓ 가용 재고 및 물류 CAPA 확인</span></div>
-                {currentApproval.status === "대기" ? <div className="decision-actions"><button onClick={() => updateApproval(currentApproval.id, "반려")}>반려</button><button onClick={() => updateApproval(currentApproval.id, "승인")}>전략 승인</button></div> : <button className="full-action" onClick={() => notify(`${currentApproval.id} 처리 이력을 확인했습니다.`)}>처리 이력 보기</button>}
-              </aside>
+              <StrategyRecordDetail record={currentStrategyRecord} />
             </div>
           </section>
         )}
 
-        {activeTab === "MCP 로그" && (
-          <section className="logs-page">
-            <div className="log-filters">{["전체", "AI", "물류", "부산점", "무역센터점", "정책"].map((item) => <button className={logFilter === item ? "active" : ""} onClick={() => setLogFilter(item)} key={item}>{item}</button>)}<span><i /> 모든 MCP 연결 정상</span></div>
-            <div className="logs-grid">
-              <article className="panel detailed-log-list">
-                <div className="approval-head"><span>시간 / 소스</span><span>도구 및 실행 내용</span><span>소요</span><span>상태</span></div>
-                {visibleLogs.map((log) => <button className={selectedLog === log.id ? "selected" : ""} onClick={() => setSelectedLog(log.id)} key={log.id}><span><b>{log.time}</b><small>{log.source}</small></span><span><b>{log.tool}</b><small>{log.description}</small></span><em>{log.duration}</em><i className={`log-status ${log.status}`}>{log.status}</i></button>)}
-              </article>
-              <aside className="panel log-detail">
-                <div className="panel-head"><div><p className="eyebrow">EXECUTION DETAIL</p><h2>{currentLog.id}</h2></div><span className={`log-status ${currentLog.status}`}>{currentLog.status}</span></div>
-                <div className="log-meta"><div><span>도구</span><b>{currentLog.tool}</b></div><div><span>소스</span><b>{currentLog.source}</b></div><div><span>소요 시간</span><b>{currentLog.duration}</b></div></div>
-                <div className="code-block"><span>REQUEST</span><pre>{currentLog.request}</pre></div>
-                <div className="code-block response"><span>RESPONSE</span><pre>{currentLog.response}</pre></div>
-                <div className="log-chain"><span className="done">1. 재고 조회</span><i>→</i><span className="done">2. 수요 예측</span><i>→</i><span className="done">3. 비용 계산</span><i>→</i><span className="current">4. 마진 최적화</span></div>
-                <button className="full-action" onClick={() => notify(`${currentLog.id} 원본 실행 데이터를 내려받을 준비가 됐습니다.`)}>원본 실행 데이터 내보내기</button>
-              </aside>
-            </div>
-          </section>
+        {activeTab === "통계" && (
+          <InventoryStatistics products={products} records={strategyRecords} />
         )}
 
         <footer><span>특약매입 상품은 입점업체 협의가 필요하며, 모든 AI 전략은 계약·가격 정책 검증 후 실행됩니다.</span><b>HYUNDAI DEPARTMENT STORE · INVENTORY POC 2026</b></footer>
@@ -655,6 +701,20 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
           onDownload={downloadStrategyReport}
         />
       )}
+      {detailProduct && (
+        <InventoryStrategyDetail
+          product={detailProduct}
+          records={detailRecords}
+          selectedRecordId={selectedStrategyRecordId}
+          onSelectRecord={setSelectedStrategyRecordId}
+          onClose={() => setDetailSku(null)}
+          onCreateStrategy={() => {
+            setSelectedStrategySkus([detailProduct.sku]);
+            setDetailSku(null);
+            navigate(tabRoutes["AI 전략 생성"]);
+          }}
+        />
+      )}
       {tourStep !== null && (
         <ProductTour
           step={tourStep}
@@ -664,6 +724,127 @@ footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{bo
         />
       )}
     </main>
+  );
+}
+
+function InventoryLookup({
+  items,
+  totalCount,
+  records,
+  filters,
+  malignant = false,
+  onOpenDetail,
+}: {
+  items: Product[];
+  totalCount: number;
+  records: StrategyRecord[];
+  filters?: React.ReactNode;
+  malignant?: boolean;
+  onOpenDetail: (sku: string) => void;
+}) {
+  return (
+    <section className="inventory-master-page">
+      <div className="inventory-master-summary">
+        <div><p className="eyebrow">{malignant ? "BAD STOCK · ACTION REQUIRED" : "MASTER INVENTORY · LIVE DATA"}</p><h2>{malignant ? "악성 재고 우선 대응 목록" : "전 지점 통합 재고 목록"}</h2><span>{malignant ? "악성 상태 재고만 모아 최근 분석 전략과 함께 보여줍니다." : "필터를 조합해 원하는 재고를 찾고 기존 분석 전략을 확인할 수 있습니다."}</span></div>
+        <div><span>조회 결과<b>{items.length}<small>건</small></b></span><span>전체 재고<b>{items.reduce((sum, item) => sum + item.stock, 0).toLocaleString()}<small>개</small></b></span><span>전략 보유<b>{items.filter((item) => records.some((record) => record.productSkus.includes(item.sku))).length}<small>건</small></b></span></div>
+      </div>
+      {filters}
+      <article className="panel inventory-master-table">
+        <div className="inventory-table-head"><span>상품 / SKU</span><span>채널 · 지점</span><span>브랜드 / 카테고리</span><span>재고</span><span>상태</span><span>최근 전략</span></div>
+        {items.map((product) => {
+          const latest = records.find((record) => record.productSkus.includes(product.sku));
+          return (
+            <button key={product.sku} onClick={() => onOpenDetail(product.sku)}>
+              <span><i>{product.category.slice(0, 1)}</i><span><b>{product.name}</b><small>{product.sku} · {product.contract}</small></span></span>
+              <span><b>{product.channel}</b><small>{product.branch}</small></span>
+              <span><b>{product.brand}</b><small>{product.category}</small></span>
+              <span><b>{product.stock.toLocaleString()}개</b><small>{product.weeks}주 커버</small></span>
+              <em className={`inventory-status ${product.inventoryStatus}`}>{product.inventoryStatus}</em>
+              <span className="latest-strategy">{latest ? <><b>{latest.title}</b><small>{latest.createdAt} · {latest.mode === "individual" ? "개별" : "통합"}</small></> : <><b>분석 기록 없음</b><small>전략 생성 필요</small></>}<i>→</i></span>
+            </button>
+          );
+        })}
+        {items.length === 0 && <div className="inventory-empty">조건에 맞는 재고가 없습니다. 필터를 초기화해보세요.</div>}
+      </article>
+      <p className="inventory-table-caption">총 {totalCount}건 기준 · 행을 선택하면 가장 최근 전략과 이전 생성 기록이 열립니다.</p>
+    </section>
+  );
+}
+
+function InventoryStrategyDetail({
+  product,
+  records,
+  selectedRecordId,
+  onSelectRecord,
+  onClose,
+  onCreateStrategy,
+}: {
+  product: Product;
+  records: StrategyRecord[];
+  selectedRecordId: string;
+  onSelectRecord: (id: string) => void;
+  onClose: () => void;
+  onCreateStrategy: () => void;
+}) {
+  const current = records.find((record) => record.id === selectedRecordId) ?? records[0];
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+  return (
+    <div className="inventory-detail-modal" role="dialog" aria-modal="true" aria-label={`${product.name} 전략 기록`}>
+      <button className="inventory-detail-backdrop" onClick={onClose} aria-label="상세 닫기" />
+      <article className="inventory-detail-sheet">
+        <header><div><p>{product.sku} · {product.brand}</p><h2>{product.name}</h2><span>{product.channel} · {product.branch} · {product.category}</span></div><button onClick={onClose} aria-label="닫기">×</button></header>
+        <div className="inventory-detail-body">
+          <main>
+            <div className="detail-stock-metrics"><div><span>현재 재고</span><b>{product.stock}<small>개</small></b></div><div><span>재고 커버</span><b>{product.weeks}<small>주</small></b></div><div><span>전환 확률</span><b>{product.transition}<small>%</small></b></div><div><span>상태</span><em className={`inventory-status ${product.inventoryStatus}`}>{product.inventoryStatus}</em></div></div>
+            {current ? (
+              <section className="latest-strategy-detail">
+                <p>SELECTED STRATEGY · {current.id}</p><div><span>{current.mode === "individual" ? "개별 분석" : `통합 분석 · ${current.productSkus.length} SKU`}</span><em>{current.status}</em></div>
+                <h3>{current.title}</h3><p>{current.summary}</p>
+                <dl><div><dt>예상 실질 마진</dt><dd>{current.margin}</dd></div><div><dt>생성 시각</dt><dd>{current.createdAt}</dd></div><div><dt>계약 정책</dt><dd>검증 완료</dd></div></dl>
+              </section>
+            ) : (
+              <section className="no-strategy-detail"><span>✦</span><h3>아직 생성된 전략이 없습니다</h3><p>AI 전략 생성을 시작해 처리안과 예상 마진을 비교해보세요.</p></section>
+            )}
+            <button className="full-action" onClick={onCreateStrategy}>이 재고로 새 AI 전략 생성 →</button>
+          </main>
+          <aside><div><p>STRATEGY HISTORY</p><h3>이전 생성 기록</h3><span>최신순 · {records.length}건</span></div>{records.map((record, index) => <button key={record.id} className={current?.id === record.id ? "selected" : ""} onClick={() => onSelectRecord(record.id)}><i>{String(index + 1).padStart(2, "0")}</i><span><small>{record.createdAt}</small><b>{record.title}</b><em>{record.mode === "individual" ? "개별 분석" : "통합 분석"} · {record.margin}</em></span></button>)}{records.length === 0 && <p className="history-empty">생성 기록 없음</p>}</aside>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function StrategyRecordDetail({ record }: { record: StrategyRecord }) {
+  const related = products.filter((product) => record.productSkus.includes(product.sku));
+  return (
+    <aside className="panel strategy-record-detail">
+      <div className="panel-head"><div><p className="eyebrow">STRATEGY DETAIL · {record.id}</p><h2>{record.title}</h2></div><i className={`mode-badge ${record.mode}`}>{record.mode === "individual" ? "개별 분석" : "통합 분석"}</i></div>
+      <p className="record-summary">{record.summary}</p>
+      <div className="record-impact"><span>예상 실질 마진<b>{record.margin}</b></span><span>분석 재고<b>{record.productSkus.length}<small> SKU</small></b></span><span>현재 상태<b>{record.status}</b></span></div>
+      <h3>분석 대상 재고</h3>
+      <div className="record-products">{related.map((product) => <div key={product.sku}><i>{product.category.slice(0, 1)}</i><span><b>{product.name}</b><small>{product.sku} · {product.branch}</small></span><em className={`inventory-status ${product.inventoryStatus}`}>{product.inventoryStatus}</em></div>)}</div>
+      <div className="record-timeline"><span className="done"><i>✓</i>재고 데이터 수집</span><span className="done"><i>✓</i>수요·비용 분석</span><span className="current"><i>3</i>{record.status === "초안" ? "담당자 공유 대기" : "담당자 협업 진행"}</span></div>
+    </aside>
+  );
+}
+
+function InventoryStatistics({ products: inventory, records }: { products: Product[]; records: StrategyRecord[] }) {
+  const badCount = inventory.filter((product) => product.inventoryStatus === "악성").length;
+  const riskCount = inventory.filter((product) => product.inventoryStatus === "위험").length;
+  const totalStock = inventory.reduce((sum, product) => sum + product.stock, 0);
+  const categories = [...new Set(inventory.map((product) => product.category))];
+  return (
+    <section className="statistics-page">
+      <div className="statistics-kpis"><article><span>통합 재고</span><b>{totalStock.toLocaleString()}<small>개</small></b><em>10 SKU 기준</em></article><article className="bad"><span>악성 재고 비중</span><b>{Math.round(badCount / inventory.length * 100)}<small>%</small></b><em>{badCount}건 우선 대응</em></article><article><span>위험 관찰 재고</span><b>{riskCount}<small>건</small></b><em>향후 30일 모니터링</em></article><article className="positive"><span>누적 전략 생성</span><b>{records.length}<small>건</small></b><em>통합 {records.filter((record) => record.mode === "integrated").length}건 포함</em></article></div>
+      <div className="statistics-grid">
+        <article className="panel category-health"><div className="panel-head"><div><p className="eyebrow">CATEGORY HEALTH</p><h2>카테고리별 재고 건전성</h2></div><span>재고 수량 기준</span></div>{categories.map((categoryName) => { const categoryItems = inventory.filter((item) => item.category === categoryName); const categoryStock = categoryItems.reduce((sum, item) => sum + item.stock, 0); const badStock = categoryItems.filter((item) => item.inventoryStatus === "악성").reduce((sum, item) => sum + item.stock, 0); const ratio = Math.round(badStock / categoryStock * 100); return <div className="category-health-row" key={categoryName}><b>{categoryName}</b><span><i style={{ width: `${ratio}%` }} /></span><em>{categoryStock.toLocaleString()}개</em><strong>{ratio}% 악성</strong></div>; })}</article>
+        <article className="panel strategy-performance"><div className="panel-head"><div><p className="eyebrow">STRATEGY PERFORMANCE</p><h2>AI 전략 운영 효과</h2></div></div><div className="performance-hero"><span>예상 손실 방어</span><b>₩1.46<small>억원</small></b><em>전월 대비 +21.8%</em></div><dl><div><dt>지점 이동</dt><dd><i style={{ width: "84%" }} /><b>84%</b></dd></div><div><dt>노출 강화</dt><dd><i style={{ width: "67%" }} /><b>67%</b></dd></div><div><dt>한정 할인</dt><dd><i style={{ width: "58%" }} /><b>58%</b></dd></div><div><dt>반품 협의</dt><dd><i style={{ width: "41%" }} /><b>41%</b></dd></div></dl></article>
+      </div>
+    </section>
   );
 }
 
@@ -897,10 +1078,6 @@ function RiskSignals({ product }: { product: Product }) {
       <div className="weather-note"><span>☂</span><p><b>외부 수요 신호</b>평년보다 이른 장마 종료 전망으로 수도권 수요는 감소하지만 부산권은 3주간 수요가 유지될 가능성이 높습니다.</p></div>
     </>
   );
-}
-
-function StoreCard({ code, name, stock, velocity, weeks, state }: { code: string; name: string; stock: number; velocity: number; weeks: number; state: "과잉" | "부족" | "적정" }) {
-  return <article className={`store-card ${state}`}><div><i>{code}</i><span><b>{name}</b><small>주간 판매 {velocity}개</small></span><em>{state}</em></div><p><span>현재고 <b>{stock}</b>개</span><span>재고 커버 <b>{weeks}</b>주</span></p><div className="stock-bar"><i style={{width:`${Math.min(100, weeks * 5)}%`}} /></div></article>;
 }
 
 function BranchList() {
