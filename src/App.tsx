@@ -84,6 +84,20 @@ const routeTabs = Object.fromEntries(
 
 const branches = ["전체 지점", "본점", "더현대 서울", "무역센터점", "판교점", "부산점", "울산점"];
 const riskStatusOptions: RiskStatus[] = ["위험", "주의", "관찰"];
+const strategyMeta: Record<Strategy, { name: string; summary: string }> = {
+  transfer: { name: "부산점 재고 이동", summary: "수요가 유지되는 부산점으로 재고를 이동해 정상가 판매 기회를 확보합니다." },
+  exposure: { name: "메인 노출 강화", summary: "정상가를 유지하면서 시즌존 노출을 확대해 브랜드와 마진을 함께 보호합니다." },
+  discount: { name: "점내 한정 할인", summary: "무역센터점 한정 할인을 통해 재고 소진 속도를 우선적으로 높입니다." },
+  return: { name: "입점사 반품 협의", summary: "특약매입 계약 조건을 기반으로 잔여 재고의 반품 가능성을 협의합니다." },
+};
+const collaborationContacts: Record<string, { name: string; title: string; department: string; phone: string; initials: string; status: string }> = {
+  "#재고-전략-협업": { name: "이주영", title: "책임 매니저", department: "상품기획팀 · 재고전략파트", phone: "02-3467-8124", initials: "이", status: "지금 연락 가능" },
+  "#상품기획-의사결정": { name: "김영만", title: "수석 매니저", department: "영업전략실 · 의사결정지원팀", phone: "02-3467-8041", initials: "김", status: "회의 중 · 11:30 복귀" },
+  "#부산점-운영": { name: "박서현", title: "영업 매니저", department: "부산점 · 영업지원팀", phone: "051-667-0128", initials: "박", status: "지금 연락 가능" },
+  "상품기획팀 · 재고 전략": { name: "이주영", title: "책임 매니저", department: "상품기획팀 · 재고전략파트", phone: "02-3467-8124", initials: "이", status: "Teams 접속 중" },
+  "영업전략실 · 의사결정": { name: "김영만", title: "수석 매니저", department: "영업전략실 · 의사결정지원팀", phone: "02-3467-8041", initials: "김", status: "회의 중 · 11:30 복귀" },
+  "부산점 · 운영 채널": { name: "박서현", title: "영업 매니저", department: "부산점 · 영업지원팀", phone: "051-667-0128", initials: "박", status: "Teams 접속 중" },
+};
 
 const tourSteps: TourStep[] = [
   {
@@ -164,6 +178,8 @@ export default function Home() {
   const [collaborationTool, setCollaborationTool] = useState<CollaborationTool>("slack");
   const [collaborationTarget, setCollaborationTarget] = useState("#재고-전략-협업");
   const [shared, setShared] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportGeneratedAt, setReportGeneratedAt] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState("");
   const [tourStep, setTourStep] = useState<number | null>(location.pathname === "/" ? 0 : null);
@@ -176,6 +192,7 @@ export default function Home() {
   const riskFiltered = filtered.filter((product) => riskStatuses.includes(product.status));
   const currentApproval = approvals.find((item) => item.id === selectedApproval) ?? approvals[0];
   const currentLog = mcpLogs.find((item) => item.id === selectedLog) ?? mcpLogs[0];
+  const collaborationContact = collaborationContacts[collaborationTarget];
   const visibleApprovals = approvalFilter === "전체" ? approvals : approvals.filter((item) => item.status === approvalFilter);
   const visibleLogs = logFilter === "전체" ? mcpLogs : mcpLogs.filter((item) => item.source === logFilter);
 
@@ -246,6 +263,61 @@ export default function Home() {
     notify(`${service} ${collaborationTarget}에 전략 비교와 AI 판단 근거를 공유했습니다.`);
   }
 
+  function generateStrategyReport() {
+    setReportGeneratedAt(new Intl.DateTimeFormat("ko-KR", {
+      dateStyle: "long",
+      timeStyle: "short",
+    }).format(new Date()));
+    setReportOpen(true);
+  }
+
+  function downloadStrategyReport() {
+    const totalCost = simulation.discountCost + simulation.operationCost;
+    const reportHtml = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>${selected.name} AI 전략 레포트</title>
+<style>
+body{margin:0;padding:48px;color:#292622;background:#f4f0e8;font-family:Arial,"Noto Sans KR",sans-serif}
+main{max-width:860px;margin:auto;background:#fff;padding:48px;border-top:8px solid #771b2c}
+h1{margin:8px 0;font-family:Georgia,serif}h2{margin-top:34px;padding-bottom:9px;border-bottom:1px solid #ddd5ca}
+.eyebrow{color:#771b2c;font-size:11px;font-weight:800;letter-spacing:.15em}.meta{color:#777;font-size:12px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.metrics div{padding:16px;background:#f4f0e8}
+.metrics span,.contact span{display:block;color:#777;font-size:11px}.metrics b{display:block;margin-top:8px;font:700 24px Georgia,serif}
+.recommend{padding:22px;background:#342c2b;color:#fff}.recommend small{color:#c7beb5}.recommend b{display:block;margin:7px 0;font-size:22px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:11px;border-bottom:1px solid #e5dfd6;text-align:right}th:first-child,td:first-child{text-align:left}
+.contact{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:18px;background:#f4f0e8}.contact b{display:block;margin-top:5px}
+footer{margin-top:38px;color:#888;font-size:10px;line-height:1.6}@media print{body{padding:0;background:#fff}main{box-shadow:none}}
+</style></head><body><main>
+<div class="eyebrow">HYUNDAI DEPARTMENT STORE · AI STRATEGY REPORT</div>
+<h1>${selected.name} 재고 처리 전략</h1><p class="meta">보고서 ID MG-2026-0723-11 · ${reportGeneratedAt}</p>
+<h2>Executive Summary</h2>
+<div class="recommend"><small>AI 권고 전략 · 신뢰도 93%</small><b>${strategyMeta[strategy].name}</b><span>${strategyMeta[strategy].summary}</span></div>
+<h2>예상 효과</h2><div class="metrics">
+<div><span>예상 소진</span><b>${simulation.sold}개</b></div><div><span>예상 매출</span><b>₩${simulation.revenue}M</b></div>
+<div><span>할인·운영비</span><b>-₩${totalCost.toFixed(1)}M</b></div><div><span>실질 마진</span><b>₩${simulation.grossMargin.toFixed(1)}M</b></div>
+</div>
+<h2>전략 비교</h2><table><thead><tr><th>전략</th><th>예상 효과</th><th>비용</th><th>실질 마진</th></tr></thead><tbody>
+<tr><td>부산점 재고 이동</td><td>312개</td><td>₩5.6M</td><td>₩19.8M</td></tr>
+<tr><td>메인 노출 강화</td><td>226개</td><td>₩5.8M</td><td>₩14.2M</td></tr>
+<tr><td>점내 한정 할인</td><td>284개</td><td>₩8.2M</td><td>₩11.7M</td></tr>
+<tr><td>입점사 반품 협의</td><td>${selected.stock}개</td><td>₩3.1M</td><td>₩4.8M</td></tr>
+</tbody></table>
+<h2>판단 근거</h2><ul><li>계절 종료 영향 92%</li><li>최근 판매속도 ${selected.salesDelta}%</li><li>현재 재고 ${selected.stock}개 · ${selected.weeks}주 커버</li><li>부산점 수요 편차 +64%</li></ul>
+<h2>협업 담당자</h2><div class="contact"><div><span>담당자</span><b>${collaborationContact.name} ${collaborationContact.title}</b></div><div><span>소속 / 연락처</span><b>${collaborationContact.department} · ${collaborationContact.phone}</b></div></div>
+<footer>본 레포트는 AI가 판매·재고·시즌·비용 정책 데이터를 기반으로 생성한 의사결정 참고 자료입니다. 실제 실행 전 계약 권한과 가격 정책을 확인해야 합니다.</footer>
+</main></body></html>`;
+    const blob = new Blob([reportHtml], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `AI-전략-레포트-${selected.sku}.html`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify("AI 전략 레포트 다운로드를 시작했습니다.");
+  }
+
   const strategyCards = (
     <>
       <div className="comparison-legend" aria-hidden="true">
@@ -313,6 +385,20 @@ export default function Home() {
             )}
           </select>
         </label>
+        {collaborationContact && (
+          <article className="contact-card" aria-live="polite">
+            <div className="contact-avatar"><span>{collaborationContact.initials}</span><i /></div>
+            <div className="contact-identity">
+              <span>담당자</span>
+              <p><b>{collaborationContact.name}</b><em>{collaborationContact.title}</em></p>
+              <small>{collaborationContact.department}</small>
+            </div>
+            <div className="contact-details">
+              <span className="contact-availability"><i />{collaborationContact.status}</span>
+              <a href={`tel:${collaborationContact.phone}`} aria-label={`${collaborationContact.name} 담당자 전화하기`}><small>내선 전화</small><b>{collaborationContact.phone}</b></a>
+            </div>
+          </article>
+        )}
       </section>
       <div className="strategy-actions">
         <button className="secondary-button" onClick={() => notify("현재 조건으로 비용과 수요를 다시 계산했습니다.")}>효과 다시 계산</button>
@@ -463,6 +549,7 @@ export default function Home() {
               <label><span>분석 상품</span><select value={selectedSku} onChange={(event) => selectProduct(event.target.value)}>{products.map((product) => <option value={product.sku} key={product.sku}>{product.name} · {product.branch}</option>)}</select></label>
               <div><span>계약 유형</span><b className={`contract ${selected.contract === "직매입" ? "direct" : ""}`}>{selected.contract}</b></div>
               <div><span>전환 확률</span><b className="risk-value">{selected.transition}%</b></div>
+              <button className="report-generate-button" onClick={generateStrategyReport}>▤ AI 전략 레포트</button>
               <button onClick={runAnalysis} disabled={analyzing}>✦ {analyzing ? "대안 분석 중…" : "대안 다시 생성"}</button>
             </div>
             <div className="strategy-page-grid">
@@ -514,6 +601,17 @@ export default function Home() {
         <footer><span>특약매입 상품은 입점업체 협의가 필요하며, 모든 AI 전략은 계약·가격 정책 검증 후 실행됩니다.</span><b>HYUNDAI DEPARTMENT STORE · INVENTORY POC 2026</b></footer>
       </section>
       {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+      {reportOpen && (
+        <StrategyReport
+          product={selected}
+          strategy={strategy}
+          simulation={simulation}
+          contact={collaborationContact}
+          generatedAt={reportGeneratedAt}
+          onClose={() => setReportOpen(false)}
+          onDownload={downloadStrategyReport}
+        />
+      )}
       {tourStep !== null && (
         <ProductTour
           step={tourStep}
@@ -523,6 +621,69 @@ export default function Home() {
         />
       )}
     </main>
+  );
+}
+
+function StrategyReport({
+  product,
+  strategy,
+  simulation,
+  contact,
+  generatedAt,
+  onClose,
+  onDownload,
+}: {
+  product: Product;
+  strategy: Strategy;
+  simulation: { sold: number; revenue: number; discountCost: number; operationCost: number; grossMargin: number; preventedLoss: number };
+  contact: { name: string; title: string; department: string; phone: string };
+  generatedAt: string;
+  onClose: () => void;
+  onDownload: () => void;
+}) {
+  const totalCost = simulation.discountCost + simulation.operationCost;
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  return (
+    <div className="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-title">
+      <button className="report-backdrop" aria-label="레포트 닫기" onClick={onClose} />
+      <article className="report-sheet">
+        <header className="report-header">
+          <div><p>HYUNDAI DEPARTMENT STORE · AI STRATEGY REPORT</p><h2 id="report-title">{product.name} 재고 처리 전략</h2><span>보고서 ID · MG-2026-0723-11 · {generatedAt}</span></div>
+          <button onClick={onClose} aria-label="레포트 닫기">×</button>
+        </header>
+        <div className="report-content">
+          <section className="report-recommendation">
+            <div><span>AI RECOMMENDATION · 신뢰도 93%</span><h3>{strategyMeta[strategy].name}</h3><p>{strategyMeta[strategy].summary}</p></div>
+            <strong>₩{simulation.grossMargin.toFixed(1)}<small>M</small><em>예상 실질 마진</em></strong>
+          </section>
+          <section className="report-section">
+            <div className="report-section-title"><span>01</span><div><small>EXPECTED IMPACT</small><h3>예상 효과</h3></div></div>
+            <div className="report-metrics"><div><span>예상 소진</span><b>{simulation.sold}<small>개</small></b></div><div><span>예상 매출</span><b>₩{simulation.revenue}<small>M</small></b></div><div><span>할인·운영비</span><b>-₩{totalCost.toFixed(1)}<small>M</small></b></div><div><span>손실 방어</span><b>₩{simulation.preventedLoss.toFixed(1)}<small>M</small></b></div></div>
+          </section>
+          <section className="report-section report-split">
+            <div>
+              <div className="report-section-title"><span>02</span><div><small>DECISION SIGNALS</small><h3>핵심 판단 근거</h3></div></div>
+              <ul className="report-signals"><li><span>계절 종료 영향</span><b>92% · 매우 높음</b></li><li><span>최근 판매속도</span><b>{product.salesDelta}%</b></li><li><span>재고 과잉도</span><b>{product.stock}개 · {product.weeks}주</b></li><li><span>타점 수요 편차</span><b>부산 +64%</b></li></ul>
+            </div>
+            <div>
+              <div className="report-section-title"><span>03</span><div><small>COLLABORATION OWNER</small><h3>실행 협업 담당자</h3></div></div>
+              <div className="report-contact"><i>{contact.name.slice(0, 1)}</i><div><b>{contact.name} · {contact.title}</b><span>{contact.department}</span><strong>{contact.phone}</strong></div></div>
+              <div className="report-policy"><span>✓ 계약 권한 확인</span><span>✓ 최소 마진율 통과</span><span>✓ 이동 가능 재고 확인</span></div>
+            </div>
+          </section>
+          <p className="report-disclaimer">본 레포트는 AI가 판매·재고·시즌·비용 정책 데이터를 기반으로 생성한 의사결정 참고 자료입니다.</p>
+        </div>
+        <footer className="report-actions"><button onClick={onClose}>닫기</button><button onClick={onDownload}>↓ 레포트 다운로드</button></footer>
+      </article>
+    </div>
   );
 }
 
